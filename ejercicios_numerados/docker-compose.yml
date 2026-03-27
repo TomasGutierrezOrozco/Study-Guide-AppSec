@@ -1,0 +1,126 @@
+services:
+  ejercicio1:
+    build: ./Ejercicio1
+    ports:
+      - "8101:80"
+
+  ejercicio2:
+    build: ./Ejercicio2
+    ports:
+      - "8102:80"
+
+  ejercicio3:
+    build: ./Ejercicio3
+    ports:
+      - "8103:80"
+
+  ejercicio4:
+    build: ./Ejercicio4
+    ports:
+      - "8104:80"
+
+  ejercicio5:
+    build: ./Ejercicio5
+    ports:
+      - "8105:5000"
+
+  ejercicio6:
+    build: ./Ejercicio6
+    ports:
+      - "8106:5000"
+
+  ejercicio7:
+    build: ./Ejercicio7
+    ports:
+      - "8107:8080"
+
+  ejercicio8:
+    build: ./Ejercicio8
+    ports:
+      - "8108:3000"
+
+  ejercicio9:
+    build: ./Ejercicio9
+    ports:
+      - "8109:3000"
+
+  ejercicio10:
+    build: ./Ejercicio10
+    ports:
+      - "8110:3000"
+
+  ejercicio11:
+    build: ./Ejercicio11
+    ports:
+      - "8111:8080"
+
+  ejercicio12:
+    build: ./Ejercicio12
+    ports:
+      - "8112:8080"
+
+  ejercicio13:
+    build: ./Ejercicio13
+    ports:
+      - "8113:8000"
+
+  ejercicio14:
+    build: ./Ejercicio14
+    ports:
+      - "8114:5000"
+
+  ejercicio15:
+    build: ./Ejercicio15
+    ports:
+      - "8115:8080"
+
+  ejercicio16:
+    build: ./Ejercicio16
+    ports:
+      - "8116:3128"
+
+  ejercicio17:
+    build: ./Ejercicio17
+    ports:
+      - "8117:53/tcp"
+      - "8117:53/udp"
+
+  ejercicio18:
+    build: ./Ejercicio18
+    ports:
+      - "8118:80"
+
+  ejercicio19:
+    build: ./Ejercicio19
+    ports:
+      - "8119:5000"
+
+  ejercicio20:
+    build: ./Ejercicio20
+    ports:
+      - "8120:8080"
+
+  ejercicio21:
+    build: ./Ejercicio21
+    ports:
+      - "8121:3000"
+
+  ejercicio22:
+    build: ./Ejercicio22
+    ports:
+      - "8122:5000"
+
+  ejercicio23:
+    build: ./Ejercicio23
+    ports:
+      - "8123:8080"
+
+  ejercicio24:
+    build: ./Ejercicio24
+    ports:
+      - "8124:3000"
+
+  ejercicio25:
+    build: ./Ejercicio25
+    ports:
+      - "8125:80"

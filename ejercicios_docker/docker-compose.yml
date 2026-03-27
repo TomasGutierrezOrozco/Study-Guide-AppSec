@@ -1,0 +1,25 @@
+services:
+  php-cmdi-sqli:
+    build: ./labs/php_cmdi_sqli
+    ports:
+      - "8081:80"
+
+  go-ssrf-lfi:
+    build: ./labs/go_ssrf_lfi
+    ports:
+      - "8082:8080"
+
+  node-xss-jwt:
+    build: ./labs/node_xss_jwt
+    ports:
+      - "8083:3000"
+
+  python-idor-race:
+    build: ./labs/python_idor_race
+    ports:
+      - "8084:5000"
+
+  java-ssrf-traversal:
+    build: ./labs/java_ssrf_traversal
+    ports:
+      - "8085:8080"
