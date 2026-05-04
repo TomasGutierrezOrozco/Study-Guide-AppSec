@@ -1,0 +1,5 @@
+zone "study.local" {
+  type master;
+  file "/etc/bind/db.study.local";
+  allow-transfer { any; };
+};
