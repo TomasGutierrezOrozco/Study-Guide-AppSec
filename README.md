@@ -1,6 +1,8 @@
 # Guia de aprendizaje AppSec para entrevistas tecnicas
 
-Este repositorio es un kit de estudio practico para prepararte en seguridad de aplicaciones con enfoque de entrevista tecnica. El material combina revision manual de codigo, explotacion con Burp Suite, laboratorios vulnerables con Docker y preguntas de repaso para entrenar criterio tecnico, no solo memoria.
+Este repositorio es un kit de estudio practico para prepararte en seguridad de aplicaciones con enfoque de entrevista tecnica. El material combina revision manual de codigo, explotacion con Burp Suite y laboratorios vulnerables con Docker para entrenar criterio tecnico, no solo memoria.
+
+> Aviso de seguridad: este repositorio contiene codigo vulnerable de forma intencional para fines educativos. Ejecuta los laboratorios solo en local o en entornos controlados, y no los expongas a internet ni a redes compartidas.
 
 El proyecto esta orientado especialmente a practicar:
 
@@ -16,18 +18,16 @@ El repositorio esta organizado para cubrir varias formas de estudio sobre un mis
 - snippets pequenos para practicar lectura de codigo;
 - laboratorios vulnerables para explotar manualmente;
 - ejercicios "a ciegas" con nombres neutrales;
-- ejemplos por vulnerabilidad y por lenguaje;
-- preguntas tecnicas con respuesta para simulacros.
+- ejemplos por vulnerabilidad y por lenguaje.
 
 ## Estructura del repositorio
 
-- `docs/`: guia base del plan de estudio y entregable exportado.
-- `preguntas_entrevista/`: preguntas tecnicas con respuestas cortas para practicar explicacion oral.
+- `docs/`: guia base del plan de estudio.
 - `ejercicios_sast/`: snippets vulnerables y soluciones comentadas para revision estatica.
 - `ejercicios_docker/`: 5 laboratorios vulnerables con nombres descriptivos para practicar SAST + DAST.
 - `ejercicios_numerados/`: 25 ejercicios con nombres neutrales para simular una evaluacion sin pistas.
 - `ejemplos_por_vulnerabilidad/`: 36 familias de vulnerabilidades con ejemplos breves en varios lenguajes.
-- `scripts/`: utilidades para generar ejemplos y exportar la guia a `.docx`.
+- `scripts/`: utilidades para generar ejemplos y exportar localmente la guia a `.docx`.
 
 ## Ruta recomendada de estudio
 
@@ -39,7 +39,6 @@ Si quieres sacarle provecho al repositorio sin perderte, esta es la secuencia ma
 4. Abre los labs de `ejercicios_docker/` para revisar codigo y luego explotar con Burp Suite.
 5. Cuando ya reconozcas patrones, practica con `ejercicios_numerados/` para resolver escenarios sin que el nombre revele el fallo.
 6. Usa `ejemplos_por_vulnerabilidad/` como catalogo rapido para comparar una misma debilidad en distintos lenguajes.
-7. Cierra con `preguntas_entrevista/preguntas_tecnicas_con_respuesta.md` para ensayar respuestas de entrevista.
 
 ## Como practicar dentro del repo
 
@@ -60,7 +59,7 @@ Este repositorio esta pensado para que repitas ese ciclo muchas veces hasta volv
 Contiene la guia principal del proyecto:
 
 - `docs/`: contiene la fuente editable de la guia principal.
-- `docs/generated/`: contiene la version exportada de la guia en formato `.docx`.
+- La version `.docx` puede generarse localmente con `scripts/generate_docx.py`; los artefactos generados no se versionan por defecto.
 
 La guia incluye objetivo, plan de dos semanas, checklist mental de reviewer y modulos por vulnerabilidad.
 
@@ -96,17 +95,6 @@ Las pistas y soluciones estan en `ejercicios_numerados/soluciones.md`.
 Agrupa 36 vulnerabilidades por carpeta. Cada una contiene ejemplos breves en multiples lenguajes para que compares patrones de implementacion insegura y remediaciones posibles.
 
 Es util como mapa mental de vulnerabilidades frecuentes en AppSec y como material de repaso rapido antes de una entrevista.
-
-### `preguntas_entrevista/`
-
-Reune preguntas tecnicas con respuesta breve sobre:
-
-- analisis SAST;
-- explotacion con Burp Suite;
-- patrones inseguros por lenguaje;
-- priorizacion y severidad.
-
-Usalo para practicar respuestas en voz alta y detectar vacios de explicacion.
 
 ## Requisitos
 
@@ -152,11 +140,11 @@ En `scripts/` hay utilidades para mantener el material:
 - `scripts/generate_vulnerability_examples.py`
 - `scripts/generate_docx.py`
 
-Sirven para generar ejemplos y exportar la guia principal a formato `.docx`.
+Sirven para generar ejemplos y exportar localmente la guia principal a formato `.docx`.
 
 ## Licencia
 
-Este repositorio se distribuye bajo una licencia de uso educativo, no
+Este repositorio se distribuye bajo una licencia personalizada de uso educativo, no
 comercial y sin aprovechamiento reputacional. Puedes usarlo para estudiar y
 practicar, pero no para venderlo, monetizarlo, promocionarte con el material o
 presentarlo como propio.
@@ -170,8 +158,7 @@ Si trabajas el material de forma disciplinada, deberias terminar pudiendo:
 - detectar vulnerabilidades comunes leyendo codigo desconocido;
 - explicar por que una entrada es explotable y que impacto real tiene;
 - validar hallazgos con Burp Suite sin depender de scanners;
-- proponer remediaciones concretas y contextualizadas;
-- responder preguntas tecnicas con mas seguridad en una entrevista.
+- proponer remediaciones concretas y contextualizadas.
 
 ## Punto de inicio recomendado
 
@@ -181,4 +168,3 @@ Si solo quieres empezar ya, abre en este orden:
 2. `ejercicios_sast/README.md`
 3. `ejercicios_docker/README.md`
 4. `ejercicios_numerados/README.md`
-5. `preguntas_entrevista/preguntas_tecnicas_con_respuesta.md`
