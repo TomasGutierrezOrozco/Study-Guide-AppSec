@@ -11,13 +11,15 @@ Estos labs estan pensados para practicar el doble enfoque de la entrevista:
 docker compose up --build
 ```
 
-## Servicios
+## Servicios y Rutas del Codigo
 
-- `php-cmdi-sqli`: command injection y SQLi en PHP.
-- `go-ssrf-lfi`: SSRF y path traversal en Go.
-- `node-xss-jwt`: XSS y JWT sin verificacion en Node.js.
-- `python-idor-race`: IDOR y race condition en Python.
-- `java-ssrf-traversal`: SSRF y path traversal en Java.
+Los laboratorios se definen como servicios en Docker usando guiones, pero su codigo fuente se ubica en el directorio `labs/` usando guiones bajos:
+
+- `php-cmdi-sqli` (codigo en `labs/php_cmdi_sqli`): command injection y SQLi en PHP.
+- `go-ssrf-lfi` (codigo en `labs/go_ssrf_lfi`): SSRF y path traversal en Go.
+- `node-xss-jwt` (codigo en `labs/node_xss_jwt`): XSS y JWT sin verificacion en Node.js.
+- `python-idor-race` (codigo en `labs/python_idor_race`): IDOR y race condition en Python.
+- `java-ssrf-traversal` (codigo en `labs/java_ssrf_traversal`): SSRF y path traversal en Java.
 
 ## Puertos
 

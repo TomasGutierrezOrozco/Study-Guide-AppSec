@@ -36,6 +36,8 @@ def invoice(invoice_id):
     con = sqlite3.connect(DB)
     row = con.execute("SELECT id, owner, total FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
     con.close()
+    if not row:
+        return {"error": "invoice not found"}, 404
     return {"id": row[0], "owner": row[1], "total": row[2]}
 
 

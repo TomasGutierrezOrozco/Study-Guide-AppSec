@@ -18,6 +18,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         target = ROOT / self.path.lstrip("/")
+        if not target.is_file():
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(b"File not found")
+            return
         self.send_response(200)
         self.end_headers()
         self.wfile.write(target.read_bytes())

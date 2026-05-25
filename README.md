@@ -57,7 +57,7 @@ Este repositorio esta pensado para que repitas ese ciclo muchas veces hasta volv
 
 Contiene la guia principal del proyecto:
 
-- `docs/`: contiene la fuente editable de la guia principal.
+- `docs/guia_estudio_appsec.md`: contiene la guia principal del plan de estudio.
 
 La guia incluye objetivo, plan de dos semanas, checklist mental de reviewer y modulos por vulnerabilidad.
 
@@ -72,13 +72,13 @@ Es el mejor punto de entrada si quieres fortalecer criterio de revision manual.
 
 ### `ejercicios_docker/`
 
-Incluye laboratorios con nombres descriptivos para que sea facil relacionar codigo y explotacion:
+Incluye laboratorios con nombres descriptivos para que sea facil relacionar codigo y explotacion. Los contenedores se definen como servicios usando guiones (ej. `php-cmdi-sqli`), pero sus archivos fuente correspondientes estan en el directorio `ejercicios_docker/labs/` usando guiones bajos:
 
-- `php-cmdi-sqli`
-- `go-ssrf-lfi`
-- `node-xss-jwt`
-- `python-idor-race`
-- `java-ssrf-traversal`
+- `ejercicios_docker/labs/php_cmdi_sqli`
+- `ejercicios_docker/labs/go_ssrf_lfi`
+- `ejercicios_docker/labs/node_xss_jwt`
+- `ejercicios_docker/labs/python_idor_race`
+- `ejercicios_docker/labs/java_ssrf_traversal`
 
 Estos labs sirven para practicar el flujo completo: leer el codigo, formular la hipotesis y validarla por HTTP.
 
@@ -152,7 +152,7 @@ Si trabajas el material de forma disciplinada, deberias terminar pudiendo:
 
 Si solo quieres empezar ya, abre en este orden:
 
-1. La guia principal dentro de `docs/`
+1. La guia principal en `docs/guia_estudio_appsec.md`
 2. `ejercicios_sast/README.md`
 3. `ejercicios_docker/README.md`
 4. `ejercicios_numerados/README.md`

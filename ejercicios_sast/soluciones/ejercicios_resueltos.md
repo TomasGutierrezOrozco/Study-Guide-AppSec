@@ -33,7 +33,7 @@ Hallazgo:
 
 - Vulnerabilidad: SSRF.
 - Fuente: parametro `u` desde query string.
-- Sink: `http.Get(u)` en linea 8.
+- Sink: `http.Get(u)` en la línea 10.
 - Impacto: acceso a servicios internos, metadata cloud y escaneo interno.
 - Remediacion: allowlist de host, verificacion DNS/IP final y sin redirects.
 
@@ -45,7 +45,7 @@ Hallazgo:
 
 - Vulnerabilidad: path traversal.
 - Fuente: parametro `name`.
-- Sink: `os.ReadFile("/data/" + name)` en linea 6.
+- Sink: `os.ReadFile("/data/" + name)` en la línea 10.
 - Impacto: lectura arbitraria de archivos.
 - Remediacion: canonicalizar, unir rutas de forma segura y comprobar que la ruta final siga bajo la base.
 
@@ -85,7 +85,7 @@ Hallazgo:
 
 - Vulnerabilidad: deserializacion insegura.
 - Fuente: `request.data`.
-- Sink: `pickle.loads` en linea 6.
+- Sink: `pickle.loads` en la línea 8.
 - Impacto: ejecucion arbitraria de codigo al deserializar.
 - Remediacion: usar JSON u otro formato de datos seguro.
 
@@ -110,7 +110,7 @@ Hallazgo:
 
 - Vulnerabilidad: deserializacion insegura.
 - Fuente: `data` proveniente de un request o archivo externo.
-- Sink: `readObject()` en linea 5.
+- Sink: `readObject()` en la línea 7.
 - Impacto: gadget chains, RCE o DoS.
 - Remediacion: eliminar Java native serialization o aplicar `ObjectInputFilter`.
 

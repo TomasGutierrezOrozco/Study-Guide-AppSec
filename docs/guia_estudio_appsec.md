@@ -1287,4 +1287,3 @@ Tu ventaja en una entrevista AppSec no viene de memorizar payloads, sino de dete
 - Ejercicios SAST resueltos: `ejercicios_sast/soluciones/ejercicios_resueltos.md`
 - Snippets por lenguaje: `ejercicios_sast/snippets/`
 - Laboratorios Docker: `ejercicios_docker/`
-- Preguntas de entrevista con respuesta: `preguntas_entrevista/preguntas_tecnicas_con_respuesta.md`
