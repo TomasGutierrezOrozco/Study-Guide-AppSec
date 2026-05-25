@@ -27,7 +27,6 @@ El repositorio esta organizado para cubrir varias formas de estudio sobre un mis
 - `ejercicios_docker/`: 5 laboratorios vulnerables con nombres descriptivos para practicar SAST + DAST.
 - `ejercicios_numerados/`: 25 ejercicios con nombres neutrales para simular una evaluacion sin pistas.
 - `ejemplos_por_vulnerabilidad/`: 36 familias de vulnerabilidades con ejemplos breves en varios lenguajes.
-- `scripts/`: utilidades para generar ejemplos y exportar localmente la guia a `.docx`.
 
 ## Ruta recomendada de estudio
 
@@ -59,7 +58,6 @@ Este repositorio esta pensado para que repitas ese ciclo muchas veces hasta volv
 Contiene la guia principal del proyecto:
 
 - `docs/`: contiene la fuente editable de la guia principal.
-- La version `.docx` puede generarse localmente con `scripts/generate_docx.py`; los artefactos generados no se versionan por defecto.
 
 La guia incluye objetivo, plan de dos semanas, checklist mental de reviewer y modulos por vulnerabilidad.
 
@@ -103,7 +101,6 @@ Para usar todo el repositorio con comodidad, lo normal es tener:
 - Docker y Docker Compose, para levantar los laboratorios.
 - Burp Suite, para la practica DAST.
 - Un editor o IDE, para revisar el codigo y tomar notas.
-- Python, si quieres ejecutar los scripts de generacion.
 
 ## Como levantar los laboratorios
 
@@ -132,15 +129,6 @@ docker compose up --build
 ```
 
 Los ejercicios exponen puertos `8101` a `8125`, segun el laboratorio.
-
-## Scripts utiles
-
-En `scripts/` hay utilidades para mantener el material:
-
-- `scripts/generate_vulnerability_examples.py`
-- `scripts/generate_docx.py`
-
-Sirven para generar ejemplos y exportar localmente la guia principal a formato `.docx`.
 
 ## Licencia
 
