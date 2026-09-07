@@ -1,63 +1,128 @@
+# Insecure Deserialization (General)
+
+## Descripción General
+La deserialización insegura ocurre cuando una aplicación reconstruye objetos en memoria a partir de flujos de datos serializados (binarios, JSON con tipos polimórficos, etc.) controlados por un atacante. Puede permitir la ejecución de cadenas de gadgets existentes en el classpath/runtime, manipulación de atributos internos, denegación de servicio o Remote Code Execution (RCE).
+
+## Patrones y Señales para Análisis SAST
+- Uso de `ObjectInputStream.readObject()`, `pickle.loads()`, `unserialize()`, `BinaryFormatter`, `Marshal.load`.
+- Formatos JSON/XML configurados para resolver tipos de clases arbitrarias (ej. Jackson `enableDefaultTyping`).
+
+## Estrategia de Mitigación y Buenas Prácticas
+- Reemplazar la deserialización nativa por formatos de intercambio de datos seguros como JSON o Protocol Buffers con esquemas estrictos.
+- Si la deserialización es indispensable, aplicar filtros de clases estrictos (Allowlist) antes de reconstruir el objeto.
+- Firmar criptográficamente los datos serializados con HMAC y validar antes de deserializar.
+
+## Análisis Técnico y Ejemplos por Lenguaje
+
+### 1. Python ([python.py](./python.py))
+```python
 # Insecure Deserialization
+pickle.loads(request.data)
+```
+- **Sink peligroso y causa raíz:** `pickle.loads()` sobre datos de usuario.
+- **Mecanismo de explotación y vector:** Ejecución remota de comandos mediante `__reduce__`.
+- **Remediación idiomática:** Migrar a `json.loads()` o aplicar firmas HMAC verificadas antes de deserializar.
 
-Este README aplica a todos los ejemplos de la carpeta. Aunque la sintaxis cambia entre lenguajes, la causa raiz de la vulnerabilidad es la misma.
+### 2. JavaScript / Node.js ([javascript.js](./javascript.js))
+```javascript
+// Insecure Deserialization
+function demo(req, res) {
+  const obj=unserialize(req.body.data);
+  }
+```
+- **Sink peligroso y causa raíz:** Uso de `node-serialize` con funciones IIFE `_$$ND_FUNC$$_`.
+- **Mecanismo de explotación y vector:** Ejecución arbitraria de código en el servidor Node.js.
+- **Remediación idiomática:** Usar exclusivamente `JSON.parse()` nativo.
 
-## Que hace vulnerable al patron
-El patron vulnerable consiste en reconstruir objetos desde datos manipulables por el atacante sin restringir tipos, estructura o comportamiento.
-No solo se leen datos: se revive un objeto con semantica de aplicacion. Eso puede activar metodos magicos, hooks, gadgets del ecosistema o estados internos que el atacante no deberia controlar.
+### 3. Java ([java.java](./java.java))
+```java
+// Insecure Deserialization
+public class Example {
+  public void demo() throws Exception {
+    new ObjectInputStream(request.getInputStream()).readObject();
+      }
+}
+```
+- **Sink peligroso y causa raíz:** `ObjectInputStream.readObject()` sin `ObjectInputFilter`.
+- **Mecanismo de explotación y vector:** RCE mediante cadenas de gadgets de librerías comunes (Commons Collections, Spring).
+- **Remediación idiomática:** Migrar a Jackson/Gson o configurar `ObjectInputFilter` restrictivo.
 
-## Como identificar casos similares
-- Deserializacion aplicada a cookies, body, archivos, colas o caches.
-- Formatos binarios o ricos en tipos usados entre cliente y servidor.
-- Rehidratacion automatica de objetos sin esquema ni allowlist de clases.
+### 4. Go ([go.go](./go.go))
+```go
+// Insecure Deserialization
+package main
+func demo() {
+  gob.NewDecoder(r.Body).Decode(&obj)
+  }
+```
+- **Sink peligroso y causa raíz:** Decodificación de flujos `gob` no confiables en interfaces genéricas.
+- **Mecanismo de explotación y vector:** Pánico en memoria o corrupción de estructuras internas.
+- **Remediación idiomática:** Decodificar únicamente en structs con tipos fuertemente definidos o usar JSON/protobuf.
 
-## Explicacion por lenguaje
-### Python (`python.py`)
-Fragmento representativo: `pickle.loads(request.data)`
-En este ejemplo, lo vulnerable es devolver a la vida un objeto cuya forma y contenido vienen del atacante. En Python, usar f-strings, concatenacion, carga directa de objetos o parseo sin restricciones no agrega ninguna proteccion automatica.
-Para encontrar casos parecidos en Python, busca funciones de deserializacion o reconstruccion de objetos sobre datos externos sin esquema ni allowlist.
+### 5. PHP ([php.php](./php.php))
+```php
+<?php
+// Insecure Deserialization
+unserialize($_POST['data']);
+```
+- **Sink peligroso y causa raíz:** Uso de `unserialize($_POST["data"])`.
+- **Mecanismo de explotación y vector:** Invocación de métodos mágicos (`__destruct`, `__wakeup`) logrando RCE o borrado de archivos.
+- **Remediación idiomática:** Reemplazar con `json_decode()` o restringir con `unserialize($data, ["allowed_classes" => false])`.
 
-### JavaScript (`javascript.js`)
-Fragmento representativo: `function demo(req, res) { const obj=unserialize(req.body.data); }`
-En este ejemplo, lo vulnerable es devolver a la vida un objeto cuya forma y contenido vienen del atacante. En JavaScript, los valores que vienen de `req`, `body`, `query` o merges de objetos llegan intactos al sink si no se validan antes.
-Para encontrar casos parecidos en JavaScript, busca funciones de deserializacion o reconstruccion de objetos sobre datos externos sin esquema ni allowlist.
+### 6. C# (.NET) ([csharp.cs](./csharp.cs))
+```csharp
+// Insecure Deserialization
+public class Example {
+  public void Demo() {
+    new BinaryFormatter().Deserialize(stream);
+      }
+}
+```
+- **Sink peligroso y causa raíz:** Uso de `BinaryFormatter.Deserialize()`.
+- **Mecanismo de explotación y vector:** Ejecución arbitraria de comandos en el servidor.
+- **Remediación idiomática:** Eliminar `BinaryFormatter` y usar `System.Text.Json` sin serialización polimórfica de tipos.
 
-### Java (`java.java`)
-Fragmento representativo: `public class Example { public void demo() throws Exception { new ObjectInputStream(request.getInputStream()).readObject(); } }`
-En este ejemplo, lo vulnerable es devolver a la vida un objeto cuya forma y contenido vienen del atacante. En Java, concatenar `String`, deserializar o consumir datos de `request` deja toda la seguridad en la logica de la aplicacion.
-Para encontrar casos parecidos en Java, busca funciones de deserializacion o reconstruccion de objetos sobre datos externos sin esquema ni allowlist.
+### 7. Ruby ([ruby.rb](./ruby.rb))
+```ruby
+# Insecure Deserialization
+def demo(params)
+  Marshal.load(request.body.read)
+  end
+```
+- **Sink peligroso y causa raíz:** Uso de `Marshal.load()` sobre datos de la petición.
+- **Mecanismo de explotación y vector:** RCE mediante gadgets en clases estándar de Ruby.
+- **Remediación idiomática:** Usar `JSON.parse()` con tipos primitivos.
 
-### Go (`go.go`)
-Fragmento representativo: `package main func demo() { gob.NewDecoder(r.Body).Decode(&obj) }`
-En este ejemplo, lo vulnerable es devolver a la vida un objeto cuya forma y contenido vienen del atacante. En Go, tomar valores desde `r.URL.Query()`, `body` o estructuras similares y pasarlos a APIs sensibles no introduce sanitizacion por defecto.
-Para encontrar casos parecidos en Go, busca funciones de deserializacion o reconstruccion de objetos sobre datos externos sin esquema ni allowlist.
+### 8. Rust ([rust.rs](./rust.rs))
+```rust
+// Insecure Deserialization
+fn demo() {
+  let obj: T = bincode::deserialize(bytes)?;
+  }
+```
+- **Sink peligroso y causa raíz:** Deserialización con `serde` permitiendo tipos dinámicos o punteros inseguros.
+- **Mecanismo de explotación y vector:** Aunque Rust evita corrupción de memoria, bugs lógicos o DoS son posibles.
+- **Remediación idiomática:** Validar esquemas mediante structs fuertemente tipados sin deserialización arbitraria.
 
-### PHP (`php.php`)
-Fragmento representativo: `unserialize($_POST['data']);`
-En este ejemplo, lo vulnerable es devolver a la vida un objeto cuya forma y contenido vienen del atacante. En PHP, usar `$_GET`, `$_POST`, `php://input` o variables equivalentes directamente es un patron clasico de vulnerabilidad.
-Para encontrar casos parecidos en PHP, busca funciones de deserializacion o reconstruccion de objetos sobre datos externos sin esquema ni allowlist.
+### 9. Perl ([perl.pl](./perl.pl))
+```perl
+# Insecure Deserialization
+sub demo {
+  thaw($body);
+  }
+```
+- **Sink peligroso y causa raíz:** Uso de `Storable::thaw` o `Sereal` con objetos externos.
+- **Mecanismo de explotación y vector:** Ejecución de código arbitrario al reconstruir objetos bendecidos.
+- **Remediación idiomática:** Reemplazar con módulos JSON seguros (`Cpanel::JSON::XS`).
 
-### Perl (`perl.pl`)
-Fragmento representativo: `sub demo { thaw($body); }`
-En este ejemplo, lo vulnerable es devolver a la vida un objeto cuya forma y contenido vienen del atacante. En Perl, las variables interpoladas o concatenadas conservan el control del atacante sobre la operacion final.
-Para encontrar casos parecidos en Perl, busca funciones de deserializacion o reconstruccion de objetos sobre datos externos sin esquema ni allowlist.
-
-### Pascal (`pascal.pas`)
-Fragmento representativo: `program Example; begin ReadComponent(Stream); end.`
-En este ejemplo, lo vulnerable es devolver a la vida un objeto cuya forma y contenido vienen del atacante. En Pascal, concatenar strings o reutilizar datos de `Request` transmite el valor no confiable hasta la operacion sensible.
-Para encontrar casos parecidos en Pascal, busca funciones de deserializacion o reconstruccion de objetos sobre datos externos sin esquema ni allowlist.
-
-### Ruby (`ruby.rb`)
-Fragmento representativo: `def demo(params) Marshal.load(request.body.read) end`
-En este ejemplo, lo vulnerable es devolver a la vida un objeto cuya forma y contenido vienen del atacante. En Ruby, `params` e interpolacion hacen muy facil que la entrada del usuario llegue intacta a una API peligrosa.
-Para encontrar casos parecidos en Ruby, busca funciones de deserializacion o reconstruccion de objetos sobre datos externos sin esquema ni allowlist.
-
-### Rust (`rust.rs`)
-Fragmento representativo: `fn demo() { let obj: T = bincode::deserialize(bytes)?; }`
-En este ejemplo, lo vulnerable es devolver a la vida un objeto cuya forma y contenido vienen del atacante. En Rust, la seguridad de memoria no evita fallas de logica: deserializar, concatenar o invocar APIs peligrosas con datos no confiables sigue siendo riesgoso.
-Para encontrar casos parecidos en Rust, busca funciones de deserializacion o reconstruccion de objetos sobre datos externos sin esquema ni allowlist.
-
-### C# (`csharp.cs`)
-Fragmento representativo: `public class Example { public void Demo() { new BinaryFormatter().Deserialize(stream); } }`
-En este ejemplo, lo vulnerable es devolver a la vida un objeto cuya forma y contenido vienen del atacante. En C#, interpolacion, concatenacion, model binding o deserializacion no sustituyen validacion, autorizacion ni listas permitidas.
-Para encontrar casos parecidos en C#, busca funciones de deserializacion o reconstruccion de objetos sobre datos externos sin esquema ni allowlist.
+### 10. Pascal / Free Pascal ([pascal.pas](./pascal.pas))
+```pascal
+{ Insecure Deserialization }
+program Example;
+begin
+  ReadComponent(Stream);
+  end.
+```
+- **Sink peligroso y causa raíz:** Deserialización de componentes y registros desde flujos externos.
+- **Mecanismo de explotación y vector:** Corrupción de punteros y manipulación de estado.
+- **Remediación idiomática:** Validar la estructura de datos campo por campo.

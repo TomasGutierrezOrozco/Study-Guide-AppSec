@@ -57,7 +57,7 @@ Este repositorio esta pensado para que repitas ese ciclo muchas veces hasta volv
 
 Contiene la guia principal del proyecto:
 
-- `docs/guia_estudio_appsec.md`: contiene la guia principal del plan de estudio.
+- [`docs/guia_estudio_appsec.md`](docs/guia_estudio_appsec.md): contiene la guia principal del plan de estudio.
 
 La guia incluye objetivo, plan de dos semanas, checklist mental de reviewer y modulos por vulnerabilidad.
 
@@ -65,8 +65,8 @@ La guia incluye objetivo, plan de dos semanas, checklist mental de reviewer y mo
 
 Se centra en lectura de codigo vulnerable.
 
-- `snippets/`: archivos cortos en Bash, C, Go, Java, JavaScript, PHP y Python.
-- `soluciones/ejercicios_resueltos.md`: explicacion del hallazgo, impacto y remediacion.
+- [`ejercicios_sast/snippets/`](ejercicios_sast/snippets/): archivos cortos en Bash, C, Go, Java, JavaScript, PHP y Python.
+- [`ejercicios_sast/soluciones/ejercicios_resueltos.md`](ejercicios_sast/soluciones/ejercicios_resueltos.md): explicacion del hallazgo, impacto y remediacion.
 
 Es el mejor punto de entrada si quieres fortalecer criterio de revision manual.
 
@@ -74,11 +74,11 @@ Es el mejor punto de entrada si quieres fortalecer criterio de revision manual.
 
 Incluye laboratorios con nombres descriptivos para que sea facil relacionar codigo y explotacion. Los contenedores se definen como servicios usando guiones (ej. `php-cmdi-sqli`), pero sus archivos fuente correspondientes estan en el directorio `ejercicios_docker/labs/` usando guiones bajos:
 
-- `ejercicios_docker/labs/php_cmdi_sqli`
-- `ejercicios_docker/labs/go_ssrf_lfi`
-- `ejercicios_docker/labs/node_xss_jwt`
-- `ejercicios_docker/labs/python_idor_race`
-- `ejercicios_docker/labs/java_ssrf_traversal`
+- [`ejercicios_docker/labs/php_cmdi_sqli`](ejercicios_docker/labs/php_cmdi_sqli)
+- [`ejercicios_docker/labs/go_ssrf_lfi`](ejercicios_docker/labs/go_ssrf_lfi)
+- [`ejercicios_docker/labs/node_xss_jwt`](ejercicios_docker/labs/node_xss_jwt)
+- [`ejercicios_docker/labs/python_idor_race`](ejercicios_docker/labs/python_idor_race)
+- [`ejercicios_docker/labs/java_ssrf_traversal`](ejercicios_docker/labs/java_ssrf_traversal)
 
 Estos labs sirven para practicar el flujo completo: leer el codigo, formular la hipotesis y validarla por HTTP.
 
@@ -86,7 +86,7 @@ Estos labs sirven para practicar el flujo completo: leer el codigo, formular la 
 
 Incluye 25 ejercicios con nombres neutrales (`Ejercicio1` a `Ejercicio25`) para evitar pistas obvias. Es ideal para simulacros o practica cronometrada.
 
-Las pistas y soluciones estan en `ejercicios_numerados/soluciones.md`.
+Las pistas y soluciones estan en [`ejercicios_numerados/soluciones.md`](ejercicios_numerados/soluciones.md).
 
 ### `ejemplos_por_vulnerabilidad/`
 
@@ -152,7 +152,7 @@ Si trabajas el material de forma disciplinada, deberias terminar pudiendo:
 
 Si solo quieres empezar ya, abre en este orden:
 
-1. La guia principal en `docs/guia_estudio_appsec.md`
-2. `ejercicios_sast/README.md`
-3. `ejercicios_docker/README.md`
-4. `ejercicios_numerados/README.md`
+1. La guia principal en [`docs/guia_estudio_appsec.md`](docs/guia_estudio_appsec.md)
+2. [`ejercicios_sast/README.md`](ejercicios_sast/README.md)
+3. [`ejercicios_docker/README.md`](ejercicios_docker/README.md)
+4. [`ejercicios_numerados/README.md`](ejercicios_numerados/README.md)

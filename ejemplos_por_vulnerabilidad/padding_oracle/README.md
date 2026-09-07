@@ -1,63 +1,132 @@
+# Padding Oracle (Crypto)
+
+## Descripción General
+Aparece en sistemas de cifrado por bloques en modo CBC (Cipher Block Chaining) con relleno PKCS#7 cuando el servidor responde de manera diferenciada (código HTTP, mensaje de error o tiempo de respuesta) ante un error de relleno (*padding error*) frente a un error de descifrado válido. Esta fuga de información lateral permite descifrar el texto plano bloque por bloque sin conocer la clave secreta.
+
+## Patrones y Señales para Análisis SAST
+- Captura explícita de excepciones de padding (`ValueError`, `BadPaddingException`) devolviendo un estado o mensaje diferente.
+- Uso del modo CBC sin autenticación de integridad (Encrypt-then-MAC ausente).
+
+## Estrategia de Mitigación y Buenas Prácticas
+- Migrar a algoritmos de cifrado autenticado (AEAD) como AES-GCM o ChaCha20-Poly1305.
+- Si se debe mantener CBC, aplicar el esquema Encrypt-then-MAC con HMAC-SHA256 y validar la firma antes de descifrar.
+- Retornar respuestas genéricas idénticas en tiempo constante ante cualquier falla de validación o descifrado.
+
+## Análisis Técnico y Ejemplos por Lenguaje
+
+### 1. Python ([python.py](./python.py))
+```python
 # Padding Oracle
+def demo():
+    try:
+        unpad(cipher.decrypt(token), 16)
+    except ValueError:
+        return 'bad padding', 403
+```
+- **Sink peligroso y causa raíz:** Captura de `ValueError` en `unpad()` retornando HTTP 403 vs 200.
+- **Mecanismo de explotación y vector:** Descifrado completo del token bloque por bloque utilizando herramientas como PadBuster.
+- **Remediación idiomática:** Migrar a `AES.MODE_GCM` con verificación automática de tag de autenticación.
 
-Este README aplica a todos los ejemplos de la carpeta. Aunque la sintaxis cambia entre lenguajes, la causa raiz de la vulnerabilidad es la misma.
+### 2. JavaScript / Node.js ([javascript.js](./javascript.js))
+```javascript
+// Padding Oracle
+function demo(req, res) {
+  try{decrypt(req.query.token);}catch{res.status(403).send('bad padding');}
+  }
+```
+- **Sink peligroso y causa raíz:** Manejo de errores de descifrado que delatan excepciones de relleno.
+- **Mecanismo de explotación y vector:** Fuga de texto plano criptográfico.
+- **Remediación idiomática:** Usar `crypto.createCipheriv("aes-256-gcm", ...)` con autenticación integrada.
 
-## Que hace vulnerable al patron
-El patron vulnerable existe cuando un sistema cifrado revela, directa o indirectamente, si el padding de un mensaje es valido.
-Errores distintos, tiempos de respuesta o codigos HTTP diferentes actuan como un oraculo. Con suficientes consultas, el atacante puede descifrar bloques o modificar ciphertext sin conocer la clave.
+### 3. Java ([java.java](./java.java))
+```java
+// Padding Oracle
+public class Example {
+  public void demo() throws Exception {
+    try{cipher.doFinal(token);}catch(BadPaddingException e){response.sendError(403,"bad padding");}
+      }
+}
+```
+- **Sink peligroso y causa raíz:** Diferenciación entre `BadPaddingException` y otras fallas en `Cipher`.
+- **Mecanismo de explotación y vector:** Ataque de Padding Oracle contra tokens o cookies de sesión.
+- **Remediación idiomática:** Usar `AES/GCM/NoPadding` y validar integridad antes del procesamiento.
 
-## Como identificar casos similares
-- Cifrado por bloques con padding y respuestas diferenciadas ante errores.
-- Manejo separado de errores de padding, formato o MAC.
-- Uso de esquemas legados tipo CBC sin autenticacion de mensaje.
+### 4. Go ([go.go](./go.go))
+```go
+// Padding Oracle
+package main
+func demo() {
+  if _,err:=decrypt(token); err!=nil { http.Error(w,"bad padding",403) }
+  }
+```
+- **Sink peligroso y causa raíz:** Respuestas con errores de relleno diferenciados en modo CBC.
+- **Mecanismo de explotación y vector:** Descifrado no autorizado de datos confidenciales.
+- **Remediación idiomática:** Usar `cipher.NewGCM` que previene ataques de oráculo por diseño.
 
-## Explicacion por lenguaje
-### Python (`python.py`)
-Fragmento representativo: `try: unpad(cipher.decrypt(token),16) except ValueError: return 'bad padding',403`
-En este ejemplo, lo vulnerable es exponer una diferencia observable entre un mensaje con padding correcto y uno incorrecto. En Python, usar f-strings, concatenacion, carga directa de objetos o parseo sin restricciones no agrega ninguna proteccion automatica.
-Para encontrar casos parecidos en Python, busca codigo criptografico que responda de forma distinta ante errores de padding, formato o autenticacion.
+### 5. PHP ([php.php](./php.php))
+```php
+<?php
+// Padding Oracle
+if(!openssl_decrypt($_GET['token'],'AES-128-CBC',$key,0,$iv)){echo 'bad padding';}
+```
+- **Sink peligroso y causa raíz:** Comprobación con `openssl_decrypt` retornando falso por mal padding.
+- **Mecanismo de explotación y vector:** Extracción del contenido de tokens cifrados.
+- **Remediación idiomática:** Migrar a cifrado autenticado `aes-256-gcm` con openssl.
 
-### JavaScript (`javascript.js`)
-Fragmento representativo: `function demo(req, res) { try{decrypt(req.query.token);}catch{res.status(403).send('bad padding');} }`
-En este ejemplo, lo vulnerable es exponer una diferencia observable entre un mensaje con padding correcto y uno incorrecto. En JavaScript, los valores que vienen de `req`, `body`, `query` o merges de objetos llegan intactos al sink si no se validan antes.
-Para encontrar casos parecidos en JavaScript, busca codigo criptografico que responda de forma distinta ante errores de padding, formato o autenticacion.
+### 6. C# (.NET) ([csharp.cs](./csharp.cs))
+```csharp
+// Padding Oracle
+public class Example {
+  public void Demo() {
+    try { Decrypt(token); } catch { Response.StatusCode = 403; }
+      }
+}
+```
+- **Sink peligroso y causa raíz:** Captura de `CryptographicException` asociada a relleno en `AesManaged`.
+- **Mecanismo de explotación y vector:** Ataque de oráculo contra tokens cifrados.
+- **Remediación idiomática:** Usar `AesGcm` disponible en .NET Core / .NET 6+.
 
-### Java (`java.java`)
-Fragmento representativo: `public class Example { public void demo() throws Exception { try{cipher.doFinal(token);}catch(BadPaddingException e){response.sendError(403,"bad padding");} } }`
-En este ejemplo, lo vulnerable es exponer una diferencia observable entre un mensaje con padding correcto y uno incorrecto. En Java, concatenar `String`, deserializar o consumir datos de `request` deja toda la seguridad en la logica de la aplicacion.
-Para encontrar casos parecidos en Java, busca codigo criptografico que responda de forma distinta ante errores de padding, formato o autenticacion.
+### 7. Ruby ([ruby.rb](./ruby.rb))
+```ruby
+# Padding Oracle
+def demo(params)
+  rescue OpenSSL::Cipher::CipherError then render plain: 'bad padding', status: 403
+  end
+```
+- **Sink peligroso y causa raíz:** Manejo de `OpenSSL::Cipher::CipherError` indicando padding inválido.
+- **Mecanismo de explotación y vector:** Recuperación de datos cifrados.
+- **Remediación idiomática:** Usar `aes-256-gcm` en `OpenSSL::Cipher`.
 
-### Go (`go.go`)
-Fragmento representativo: `package main func demo() { if _,err:=decrypt(token); err!=nil { http.Error(w,"bad padding",403) } }`
-En este ejemplo, lo vulnerable es exponer una diferencia observable entre un mensaje con padding correcto y uno incorrecto. En Go, tomar valores desde `r.URL.Query()`, `body` o estructuras similares y pasarlos a APIs sensibles no introduce sanitizacion por defecto.
-Para encontrar casos parecidos en Go, busca codigo criptografico que responda de forma distinta ante errores de padding, formato o autenticacion.
+### 8. Rust ([rust.rs](./rust.rs))
+```rust
+// Padding Oracle
+fn demo() {
+  if decrypt(token).is_err() { return Err(StatusCode::FORBIDDEN); }
+  }
+```
+- **Sink peligroso y causa raíz:** Diferenciación de errores al desaplicar PKCS#7.
+- **Mecanismo de explotación y vector:** Ataques de canal lateral.
+- **Remediación idiomática:** Usar crates de cifrado moderno como `aes-gcm`.
 
-### PHP (`php.php`)
-Fragmento representativo: `if(!openssl_decrypt($_GET['token'],'AES-128-CBC',$key,0,$iv)){echo 'bad padding';}`
-En este ejemplo, lo vulnerable es exponer una diferencia observable entre un mensaje con padding correcto y uno incorrecto. En PHP, usar `$_GET`, `$_POST`, `php://input` o variables equivalentes directamente es un patron clasico de vulnerabilidad.
-Para encontrar casos parecidos en PHP, busca codigo criptografico que responda de forma distinta ante errores de padding, formato o autenticacion.
+### 9. Perl ([perl.pl](./perl.pl))
+```perl
+# Padding Oracle
+sub demo {
+  eval { decrypt($token) }; if ($@) { print 'bad padding' }
+  }
+```
+- **Sink peligroso y causa raíz:** Manejo diferencial de errores de desempacado de padding.
+- **Mecanismo de explotación y vector:** Vulnerabilidad ante criptoanálisis de oráculo.
+- **Remediación idiomática:** Implementar cifrado autenticado con HMAC.
 
-### Perl (`perl.pl`)
-Fragmento representativo: `sub demo { eval { decrypt($token) }; if ($@) { print 'bad padding' } }`
-En este ejemplo, lo vulnerable es exponer una diferencia observable entre un mensaje con padding correcto y uno incorrecto. En Perl, las variables interpoladas o concatenadas conservan el control del atacante sobre la operacion final.
-Para encontrar casos parecidos en Perl, busca codigo criptografico que responda de forma distinta ante errores de padding, formato o autenticacion.
-
-### Pascal (`pascal.pas`)
-Fragmento representativo: `program Example; begin try Decrypt(Token); except on E: Exception do Response.Code := 403; end; end.`
-En este ejemplo, lo vulnerable es exponer una diferencia observable entre un mensaje con padding correcto y uno incorrecto. En Pascal, concatenar strings o reutilizar datos de `Request` transmite el valor no confiable hasta la operacion sensible.
-Para encontrar casos parecidos en Pascal, busca codigo criptografico que responda de forma distinta ante errores de padding, formato o autenticacion.
-
-### Ruby (`ruby.rb`)
-Fragmento representativo: `def demo(params) rescue OpenSSL::Cipher::CipherError then render plain: 'bad padding', status: 403 end`
-En este ejemplo, lo vulnerable es exponer una diferencia observable entre un mensaje con padding correcto y uno incorrecto. En Ruby, `params` e interpolacion hacen muy facil que la entrada del usuario llegue intacta a una API peligrosa.
-Para encontrar casos parecidos en Ruby, busca codigo criptografico que responda de forma distinta ante errores de padding, formato o autenticacion.
-
-### Rust (`rust.rs`)
-Fragmento representativo: `fn demo() { if decrypt(token).is_err() { return Err(StatusCode::FORBIDDEN); } }`
-En este ejemplo, lo vulnerable es exponer una diferencia observable entre un mensaje con padding correcto y uno incorrecto. En Rust, la seguridad de memoria no evita fallas de logica: deserializar, concatenar o invocar APIs peligrosas con datos no confiables sigue siendo riesgoso.
-Para encontrar casos parecidos en Rust, busca codigo criptografico que responda de forma distinta ante errores de padding, formato o autenticacion.
-
-### C# (`csharp.cs`)
-Fragmento representativo: `public class Example { public void Demo() { try { Decrypt(token); } catch { Response.StatusCode = 403; } } }`
-En este ejemplo, lo vulnerable es exponer una diferencia observable entre un mensaje con padding correcto y uno incorrecto. En C#, interpolacion, concatenacion, model binding o deserializacion no sustituyen validacion, autorizacion ni listas permitidas.
-Para encontrar casos parecidos en C#, busca codigo criptografico que responda de forma distinta ante errores de padding, formato o autenticacion.
+### 10. Pascal / Free Pascal ([pascal.pas](./pascal.pas))
+```pascal
+{ Padding Oracle }
+program Example;
+begin
+  try Decrypt(Token); except on E: Exception do Response.Code := 403; end;
+  end.
+```
+- **Sink peligroso y causa raíz:** Respuestas distintas ante fallas de padding en bloques.
+- **Mecanismo de explotación y vector:** Descifrado sin clave.
+- **Remediación idiomática:** Retornar errores genéricos y usar modos autenticados.

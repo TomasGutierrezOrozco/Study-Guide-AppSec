@@ -1,63 +1,128 @@
 # NoSQL Injection
 
-Este README aplica a todos los ejemplos de la carpeta. Aunque la sintaxis cambia entre lenguajes, la causa raiz de la vulnerabilidad es la misma.
+## Descripción General
+Aparece en bases de datos orientadas a documentos (como MongoDB) cuando las entradas del usuario se pasan directamente como objetos de consulta en lugar de cadenas de texto primitivas. Un atacante puede enviar operadores de consulta como `{"$ne": null}` o `{"$gt": ""}` para alterar la lógica booleana y eludir autenticaciones o volcar colecciones.
 
-## Que hace vulnerable al patron
-La vulnerabilidad ocurre cuando la aplicacion construye consultas NoSQL con datos del usuario sin imponer tipo, operador o estructura esperada.
-Aunque no haya SQL, el motor sigue interpretando operadores y expresiones. Si el atacante puede inyectar objetos como `$ne` o `$gt`, altera la semantica de la consulta.
+## Patrones y Señales para Análisis SAST
+- Paso de cuerpos JSON completos a métodos de consulta (`db.users.find(req.body)`).
+- Ausencia de validación de tipo (`typeof param !== "string"`).
 
-## Como identificar casos similares
-- Uso directo de objetos JSON del request en filtros o busquedas.
-- Aceptacion de operadores NoSQL enviados por el cliente.
-- Transformacion de strings a documentos de consulta sin esquema estricto.
+## Estrategia de Mitigación y Buenas Prácticas
+- Validar estrictamente que los parámetros de autenticación y filtros sean cadenas de texto primitivas.
+- Utilizar librerías de esquemas (como Zod, Joi, Pydantic) para asegurar que no se inyecten objetos u operadores.
+- Usar el operador `$eq` explícito: `{"username": {"$eq": String(userInput)}}`.
 
-## Explicacion por lenguaje
-### Python (`python.py`)
-Fragmento representativo: `mongo.db.users.find_one(request.get_json())`
-En este ejemplo, lo vulnerable es permitir que la entrada del usuario defina no solo el valor consultado sino tambien operadores y estructura de la query. En Python, usar f-strings, concatenacion, carga directa de objetos o parseo sin restricciones no agrega ninguna proteccion automatica.
-Para encontrar casos parecidos en Python, busca filtros construidos a partir de objetos del cliente y uso directo de operadores del motor NoSQL.
+## Análisis Técnico y Ejemplos por Lenguaje
 
-### JavaScript (`javascript.js`)
-Fragmento representativo: `function demo(req, res) { db.users.findOne(req.body); }`
-En este ejemplo, lo vulnerable es permitir que la entrada del usuario defina no solo el valor consultado sino tambien operadores y estructura de la query. En JavaScript, los valores que vienen de `req`, `body`, `query` o merges de objetos llegan intactos al sink si no se validan antes.
-Para encontrar casos parecidos en JavaScript, busca filtros construidos a partir de objetos del cliente y uso directo de operadores del motor NoSQL.
+### 1. Python ([python.py](./python.py))
+```python
+# NoSQL Injection
+mongo.db.users.find_one(request.get_json())
+```
+- **Sink peligroso y causa raíz:** `mongo.db.users.find_one(request.get_json())` directo.
+- **Mecanismo de explotación y vector:** Bypass de login enviando `{"username": {"$ne": null}, "password": {"$ne": null}}`.
+- **Remediación idiomática:** Validar tipos: `if not isinstance(u, str): return 400` y consultar con strings explícitos.
 
-### Java (`java.java`)
-Fragmento representativo: `public class Example { public void demo() throws Exception { collection.find(new Document(request.getParameterMap())); } }`
-En este ejemplo, lo vulnerable es permitir que la entrada del usuario defina no solo el valor consultado sino tambien operadores y estructura de la query. En Java, concatenar `String`, deserializar o consumir datos de `request` deja toda la seguridad en la logica de la aplicacion.
-Para encontrar casos parecidos en Java, busca filtros construidos a partir de objetos del cliente y uso directo de operadores del motor NoSQL.
+### 2. JavaScript / Node.js ([javascript.js](./javascript.js))
+```javascript
+// NoSQL Injection
+function demo(req, res) {
+  db.users.findOne(req.body);
+  }
+```
+- **Sink peligroso y causa raíz:** `db.users.findOne({ username: req.body.username, password: req.body.password })`.
+- **Mecanismo de explotación y vector:** Autenticación como administrador sin conocer la contraseña.
+- **Remediación idiomática:** Validar con `typeof req.body.username === "string"` o usar `mongo-sanitize`.
 
-### Go (`go.go`)
-Fragmento representativo: `package main func demo() { json.NewDecoder(r.Body).Decode(&filter) }`
-En este ejemplo, lo vulnerable es permitir que la entrada del usuario defina no solo el valor consultado sino tambien operadores y estructura de la query. En Go, tomar valores desde `r.URL.Query()`, `body` o estructuras similares y pasarlos a APIs sensibles no introduce sanitizacion por defecto.
-Para encontrar casos parecidos en Go, busca filtros construidos a partir de objetos del cliente y uso directo de operadores del motor NoSQL.
+### 3. Java ([java.java](./java.java))
+```java
+// NoSQL Injection
+public class Example {
+  public void demo() throws Exception {
+    collection.find(new Document(request.getParameterMap()));
+      }
+}
+```
+- **Sink peligroso y causa raíz:** Construcción de `BasicDBObject` con mapas anidados provenientes del request.
+- **Mecanismo de explotación y vector:** Manipulación de operadores de consulta en MongoDB Java Driver.
+- **Remediación idiomática:** Validar esquemas y construir queries con tipos fuertemente definidos.
 
-### PHP (`php.php`)
-Fragmento representativo: `$collection->findOne(json_decode(file_get_contents('php://input'),true));`
-En este ejemplo, lo vulnerable es permitir que la entrada del usuario defina no solo el valor consultado sino tambien operadores y estructura de la query. En PHP, usar `$_GET`, `$_POST`, `php://input` o variables equivalentes directamente es un patron clasico de vulnerabilidad.
-Para encontrar casos parecidos en PHP, busca filtros construidos a partir de objetos del cliente y uso directo de operadores del motor NoSQL.
+### 4. Go ([go.go](./go.go))
+```go
+// NoSQL Injection
+package main
+func demo() {
+  json.NewDecoder(r.Body).Decode(&filter)
+  }
+```
+- **Sink peligroso y causa raíz:** `bson.M` construido con estructuras dinámicas del cliente.
+- **Mecanismo de explotación y vector:** Bypass de consultas y lectura de documentos ajenos.
+- **Remediación idiomática:** Validar que los valores sean tipos primitivos antes de estructurar el filtro BSON.
 
-### Perl (`perl.pl`)
-Fragmento representativo: `sub demo { $collection->find_one(decode_json($body)); }`
-En este ejemplo, lo vulnerable es permitir que la entrada del usuario defina no solo el valor consultado sino tambien operadores y estructura de la query. En Perl, las variables interpoladas o concatenadas conservan el control del atacante sobre la operacion final.
-Para encontrar casos parecidos en Perl, busca filtros construidos a partir de objetos del cliente y uso directo de operadores del motor NoSQL.
+### 5. PHP ([php.php](./php.php))
+```php
+<?php
+// NoSQL Injection
+$collection->findOne(json_decode(file_get_contents('php://input'),true));
+```
+- **Sink peligroso y causa raíz:** Paso de `$_POST` (que puede contener arrays asociativos) a consultas MongoDB.
+- **Mecanismo de explotación y vector:** Bypass de autenticación mediante inyección de operadores `$gt`/`$ne`.
+- **Remediación idiomática:** Forzar conversión a string: `$user = (string)$_POST["username"];`.
 
-### Pascal (`pascal.pas`)
-Fragmento representativo: `program Example; begin Filter := Request.Content; end.`
-En este ejemplo, lo vulnerable es permitir que la entrada del usuario defina no solo el valor consultado sino tambien operadores y estructura de la query. En Pascal, concatenar strings o reutilizar datos de `Request` transmite el valor no confiable hasta la operacion sensible.
-Para encontrar casos parecidos en Pascal, busca filtros construidos a partir de objetos del cliente y uso directo de operadores del motor NoSQL.
+### 6. C# (.NET) ([csharp.cs](./csharp.cs))
+```csharp
+// NoSQL Injection
+public class Example {
+  public void Demo() {
+    collection.Find(BsonDocument.Parse(body)).FirstOrDefault();
+      }
+}
+```
+- **Sink peligroso y causa raíz:** `Builders<BsonDocument>.Filter` construido a partir de objetos dinámicos.
+- **Mecanismo de explotación y vector:** Inyección de operadores NoSQL.
+- **Remediación idiomática:** Usar modelos de filtro fuertemente tipados en el driver de C#.
 
-### Ruby (`ruby.rb`)
-Fragmento representativo: `def demo(params) User.where(params.permit!).first end`
-En este ejemplo, lo vulnerable es permitir que la entrada del usuario defina no solo el valor consultado sino tambien operadores y estructura de la query. En Ruby, `params` e interpolacion hacen muy facil que la entrada del usuario llegue intacta a una API peligrosa.
-Para encontrar casos parecidos en Ruby, busca filtros construidos a partir de objetos del cliente y uso directo de operadores del motor NoSQL.
+### 7. Ruby ([ruby.rb](./ruby.rb))
+```ruby
+# NoSQL Injection
+def demo(params)
+  User.where(params.permit!).first
+  end
+```
+- **Sink peligroso y causa raíz:** Paso de parámetros sin sanear a consultas de Mongoid.
+- **Mecanismo de explotación y vector:** Bypass de login mediante hash params.
+- **Remediación idiomática:** Verificar que los valores no sean hashes antes de consultar.
 
-### Rust (`rust.rs`)
-Fragmento representativo: `fn demo() { let filter: serde_json::Value = serde_json::from_str(body)?; }`
-En este ejemplo, lo vulnerable es permitir que la entrada del usuario defina no solo el valor consultado sino tambien operadores y estructura de la query. En Rust, la seguridad de memoria no evita fallas de logica: deserializar, concatenar o invocar APIs peligrosas con datos no confiables sigue siendo riesgoso.
-Para encontrar casos parecidos en Rust, busca filtros construidos a partir de objetos del cliente y uso directo de operadores del motor NoSQL.
+### 8. Rust ([rust.rs](./rust.rs))
+```rust
+// NoSQL Injection
+fn demo() {
+  let filter: serde_json::Value = serde_json::from_str(body)?;
+  }
+```
+- **Sink peligroso y causa raíz:** Deserialización dinámica de BSON con operadores arbitrarios.
+- **Mecanismo de explotación y vector:** Alteración de consultas NoSQL.
+- **Remediación idiomática:** Usar structs fuertemente tipados para los filtros de búsqueda.
 
-### C# (`csharp.cs`)
-Fragmento representativo: `public class Example { public void Demo() { collection.Find(BsonDocument.Parse(body)).FirstOrDefault(); } }`
-En este ejemplo, lo vulnerable es permitir que la entrada del usuario defina no solo el valor consultado sino tambien operadores y estructura de la query. En C#, interpolacion, concatenacion, model binding o deserializacion no sustituyen validacion, autorizacion ni listas permitidas.
-Para encontrar casos parecidos en C#, busca filtros construidos a partir de objetos del cliente y uso directo de operadores del motor NoSQL.
+### 9. Perl ([perl.pl](./perl.pl))
+```perl
+# NoSQL Injection
+sub demo {
+  $collection->find_one(decode_json($body));
+  }
+```
+- **Sink peligroso y causa raíz:** Paso de estructuras hash externas a consultas de MongoDB.
+- **Mecanismo de explotación y vector:** Alteración de la lógica del filtro.
+- **Remediación idiomática:** Verificar que los valores de búsqueda sean escalares.
+
+### 10. Pascal / Free Pascal ([pascal.pas](./pascal.pas))
+```pascal
+{ NoSQL Injection }
+program Example;
+begin
+  Filter := Request.Content;
+  end.
+```
+- **Sink peligroso y causa raíz:** Consultas NoSQL construidas con datos del cliente.
+- **Mecanismo de explotación y vector:** Manipulación de condiciones booleanas.
+- **Remediación idiomática:** Validar el tipo de dato de cada parámetro.

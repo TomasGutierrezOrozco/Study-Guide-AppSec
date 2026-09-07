@@ -1,63 +1,130 @@
 # SQL Truncation
 
-Este README aplica a todos los ejemplos de la carpeta. Aunque la sintaxis cambia entre lenguajes, la causa raiz de la vulnerabilidad es la misma.
+## Descripción General
+Ocurre cuando una base de datos SQL (típicamente MySQL en modo no estricto) trunca silenciosamente los strings que superan la longitud máxima definida en una columna (ej. `VARCHAR(8)`). Un atacante puede registrar un usuario como `admin[muchos espacios]x`, la base de datos trunca a `admin   `, y al realizar comparaciones que ignoran espacios finales, el atacante puede suplantar la cuenta del administrador legítimo.
 
-## Que hace vulnerable al patron
-La vulnerabilidad existe cuando la aplicacion y la base de datos interpretan de forma distinta la longitud o el contenido significativo de un valor.
-La aplicacion valida un dato completo, pero la base lo recorta al insertarlo o compararlo. Esa diferencia puede causar colisiones, bypasses o confusion de identidad.
+## Patrones y Señales para Análisis SAST
+- Uso de `substr(username, 0, N)` en el backend antes de insertar en la base de datos.
+- Bases de datos SQL con tablas donde la columna `username` tiene longitud corta y colación que ignora espacios en blanco finales (PAD SPACE).
 
-## Como identificar casos similares
-- Campos cortos en base de datos y validacion mas laxa en la aplicacion.
-- Comparaciones o unicidad sobre valores que luego se truncan.
-- Normalizacion inconsistente de espacios, NUL o multibyte.
+## Estrategia de Mitigación y Buenas Prácticas
+- Habilitar el modo estricto en la base de datos (`STRICT_ALL_TABLES` o `STRICT_TRANS_TABLES` en MySQL).
+- Aplicar `trim()` en el servidor para eliminar espacios en blanco antes de validar longitud y unicidad.
+- Definir restricciones de clave primaria o índices únicos que rechacen colisiones en lugar de truncar.
 
-## Explicacion por lenguaje
-### Python (`python.py`)
-Fragmento representativo: `username=request.form['username'][:8] create_user(username)`
-En este ejemplo, lo vulnerable es depender de una validacion previa que no coincide con la forma en que la base persistira o comparara el dato. En Python, usar f-strings, concatenacion, carga directa de objetos o parseo sin restricciones no agrega ninguna proteccion automatica.
-Para encontrar casos parecidos en Python, busca diferencias entre validacion de longitud/formato en aplicacion y definicion real del campo en la base.
+## Análisis Técnico y Ejemplos por Lenguaje
 
-### JavaScript (`javascript.js`)
-Fragmento representativo: `function demo(req, res) { const username=req.body.username.slice(0,8); }`
-En este ejemplo, lo vulnerable es depender de una validacion previa que no coincide con la forma en que la base persistira o comparara el dato. En JavaScript, los valores que vienen de `req`, `body`, `query` o merges de objetos llegan intactos al sink si no se validan antes.
-Para encontrar casos parecidos en JavaScript, busca diferencias entre validacion de longitud/formato en aplicacion y definicion real del campo en la base.
+### 1. Python ([python.py](./python.py))
+```python
+# SQL Truncation
+username=request.form['username'][:8]
+create_user(username)
+```
+- **Sink peligroso y causa raíz:** `username = request.form["username"][:8]` recortando el texto antes de insertar.
+- **Mecanismo de explotación y vector:** Creación de cuentas colisionantes que suplantan a otros usuarios.
+- **Remediación idiomática:** No truncar manualmente; validar con regex `^[a-zA-Z0-9_]{3,20}$` y aplicar `strip()`.
 
-### Java (`java.java`)
-Fragmento representativo: `public class Example { public void demo() throws Exception { String username=request.getParameter("username").substring(0,8); } }`
-En este ejemplo, lo vulnerable es depender de una validacion previa que no coincide con la forma en que la base persistira o comparara el dato. En Java, concatenar `String`, deserializar o consumir datos de `request` deja toda la seguridad en la logica de la aplicacion.
-Para encontrar casos parecidos en Java, busca diferencias entre validacion de longitud/formato en aplicacion y definicion real del campo en la base.
+### 2. JavaScript / Node.js ([javascript.js](./javascript.js))
+```javascript
+// SQL Truncation
+function demo(req, res) {
+  const username=req.body.username.slice(0,8);
+  }
+```
+- **Sink peligroso y causa raíz:** `username.substring(0, 8)` antes de la inserción en BD.
+- **Mecanismo de explotación y vector:** Suplantación de identidad en sistemas con comparación flexible de espacios.
+- **Remediación idiomática:** Validar la longitud máxima en lugar de truncar silenciosamente.
 
-### Go (`go.go`)
-Fragmento representativo: `package main func demo() { username:=r.FormValue("username")[:8] }`
-En este ejemplo, lo vulnerable es depender de una validacion previa que no coincide con la forma en que la base persistira o comparara el dato. En Go, tomar valores desde `r.URL.Query()`, `body` o estructuras similares y pasarlos a APIs sensibles no introduce sanitizacion por defecto.
-Para encontrar casos parecidos en Go, busca diferencias entre validacion de longitud/formato en aplicacion y definicion real del campo en la base.
+### 3. Java ([java.java](./java.java))
+```java
+// SQL Truncation
+public class Example {
+  public void demo() throws Exception {
+    String username=request.getParameter("username").substring(0,8);
+      }
+}
+```
+- **Sink peligroso y causa raíz:** Recorte de strings con `substring` antes de persistir en JPA.
+- **Mecanismo de explotación y vector:** Colisión de nombres de usuario únicos.
+- **Remediación idiomática:** Usar validadores de Bean Validation `@Size(min=3, max=20)` y rechazar excesos.
 
-### PHP (`php.php`)
-Fragmento representativo: `$username=substr($_POST['username'],0,8); createUser($username);`
-En este ejemplo, lo vulnerable es depender de una validacion previa que no coincide con la forma en que la base persistira o comparara el dato. En PHP, usar `$_GET`, `$_POST`, `php://input` o variables equivalentes directamente es un patron clasico de vulnerabilidad.
-Para encontrar casos parecidos en PHP, busca diferencias entre validacion de longitud/formato en aplicacion y definicion real del campo en la base.
+### 4. Go ([go.go](./go.go))
+```go
+// SQL Truncation
+package main
+func demo() {
+  username:=r.FormValue("username")[:8]
+  }
+```
+- **Sink peligroso y causa raíz:** `r.FormValue("username")[:8]` truncando el slice de string.
+- **Mecanismo de explotación y vector:** Suplantación de cuentas.
+- **Remediación idiomática:** Validar la longitud con `len()` y rechazar solicitudes que excedan el límite.
 
-### Perl (`perl.pl`)
-Fragmento representativo: `sub demo { $username = substr(param('username'), 0, 8); }`
-En este ejemplo, lo vulnerable es depender de una validacion previa que no coincide con la forma en que la base persistira o comparara el dato. En Perl, las variables interpoladas o concatenadas conservan el control del atacante sobre la operacion final.
-Para encontrar casos parecidos en Perl, busca diferencias entre validacion de longitud/formato en aplicacion y definicion real del campo en la base.
+### 5. PHP ([php.php](./php.php))
+```php
+<?php
+// SQL Truncation
+$username=substr($_POST['username'],0,8);
+createUser($username);
+```
+- **Sink peligroso y causa raíz:** `$username = substr($_POST["username"], 0, 8);` insertado en BD.
+- **Mecanismo de explotación y vector:** Un atacante registra `admin   x`, la BD trunca a `admin` y suplanta al administrador.
+- **Remediación idiomática:** Eliminar espacios con `trim()` y rechazar entradas demasiado largas en lugar de truncar.
 
-### Pascal (`pascal.pas`)
-Fragmento representativo: `program Example; begin Username := Copy(Request.ContentFields.Values['username'], 1, 8); end.`
-En este ejemplo, lo vulnerable es depender de una validacion previa que no coincide con la forma en que la base persistira o comparara el dato. En Pascal, concatenar strings o reutilizar datos de `Request` transmite el valor no confiable hasta la operacion sensible.
-Para encontrar casos parecidos en Pascal, busca diferencias entre validacion de longitud/formato en aplicacion y definicion real del campo en la base.
+### 6. C# (.NET) ([csharp.cs](./csharp.cs))
+```csharp
+// SQL Truncation
+public class Example {
+  public void Demo() {
+    var username = (Request.Form["username"] ?? "").Substring(0, 8);
+      }
+}
+```
+- **Sink peligroso y causa raíz:** `username.Substring(0, 8)` antes de invocar `SaveChanges`.
+- **Mecanismo de explotación y vector:** Suplantación de cuentas.
+- **Remediación idiomática:** Configurar `HasMaxLength(20)` y validar con Data Annotations `[StringLength]`.
 
-### Ruby (`ruby.rb`)
-Fragmento representativo: `def demo(params) username = params[:username][0,8] end`
-En este ejemplo, lo vulnerable es depender de una validacion previa que no coincide con la forma en que la base persistira o comparara el dato. En Ruby, `params` e interpolacion hacen muy facil que la entrada del usuario llegue intacta a una API peligrosa.
-Para encontrar casos parecidos en Ruby, busca diferencias entre validacion de longitud/formato en aplicacion y definicion real del campo en la base.
+### 7. Ruby ([ruby.rb](./ruby.rb))
+```ruby
+# SQL Truncation
+def demo(params)
+  username = params[:username][0,8]
+  end
+```
+- **Sink peligroso y causa raíz:** Truncado con `username[0..7]` antes de guardar en base de datos.
+- **Mecanismo de explotación y vector:** Ataque de truncamiento de usuario.
+- **Remediación idiomática:** Usar validaciones de modelo en Rails: `validates :username, length: { maximum: 20 }`.
 
-### Rust (`rust.rs`)
-Fragmento representativo: `fn demo() { let username = &username[..8]; }`
-En este ejemplo, lo vulnerable es depender de una validacion previa que no coincide con la forma en que la base persistira o comparara el dato. En Rust, la seguridad de memoria no evita fallas de logica: deserializar, concatenar o invocar APIs peligrosas con datos no confiables sigue siendo riesgoso.
-Para encontrar casos parecidos en Rust, busca diferencias entre validacion de longitud/formato en aplicacion y definicion real del campo en la base.
+### 8. Rust ([rust.rs](./rust.rs))
+```rust
+// SQL Truncation
+fn demo() {
+  let username = &username[..8];
+  }
+```
+- **Sink peligroso y causa raíz:** Truncado de strings con slices antes de almacenar.
+- **Mecanismo de explotación y vector:** Colisiones de registro.
+- **Remediación idiomática:** Rechazar strings que excedan el tamaño máximo permitido.
 
-### C# (`csharp.cs`)
-Fragmento representativo: `public class Example { public void Demo() { var username = (Request.Form["username"] ?? "").Substring(0, 8); } }`
-En este ejemplo, lo vulnerable es depender de una validacion previa que no coincide con la forma en que la base persistira o comparara el dato. En C#, interpolacion, concatenacion, model binding o deserializacion no sustituyen validacion, autorizacion ni listas permitidas.
-Para encontrar casos parecidos en C#, busca diferencias entre validacion de longitud/formato en aplicacion y definicion real del campo en la base.
+### 9. Perl ([perl.pl](./perl.pl))
+```perl
+# SQL Truncation
+sub demo {
+  $username = substr(param('username'), 0, 8);
+  }
+```
+- **Sink peligroso y causa raíz:** Uso de `substr` para ajustar longitud de campos clave.
+- **Mecanismo de explotación y vector:** Suplantación de usuarios.
+- **Remediación idiomática:** Validar longitud con expresiones regulares estrictas.
+
+### 10. Pascal / Free Pascal ([pascal.pas](./pascal.pas))
+```pascal
+{ SQL Truncation }
+program Example;
+begin
+  Username := Copy(Request.ContentFields.Values['username'], 1, 8);
+  end.
+```
+- **Sink peligroso y causa raíz:** Copias de string acotadas en campos de longitud fija.
+- **Mecanismo de explotación y vector:** Colisión de identidades.
+- **Remediación idiomática:** Verificar la longitud total antes de guardar.

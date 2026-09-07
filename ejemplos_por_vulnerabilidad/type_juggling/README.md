@@ -1,63 +1,130 @@
+# Type Juggling / Loose Comparison
+
+## Descripción General
+Ocurre en lenguajes de tipado dinámico (principalmente PHP y JavaScript) cuando se utiliza el operador de comparación débil (`==` en vez de `===`). En PHP, comparar un string con formato científico como `"0e123456"` con otro `"0e999999"` resulta en `true` porque ambos se convierten al número flotante `0`. Esto permite eludir comprobaciones de hash de contraseñas o tokens.
+
+## Patrones y Señales para Análisis SAST
+- Uso de `==` o `!=` en lugar de `===` o `!==` al comparar contraseñas, hashes o tokens.
+- Comparación de funciones hash (`md5()`, `sha1()`) con strings usando operadores no estrictos.
+
+## Estrategia de Mitigación y Buenas Prácticas
+- Utilizar siempre comparación estricta de tipo y valor (`===` y `!==`).
+- Para credenciales y hashes criptográficos, utilizar funciones seguras en tiempo constante como `hash_equals()` en PHP o `crypto.timingSafeEqual()` en Node.js.
+- Utilizar algoritmos de hashing modernos de contraseñas (`password_hash` / `password_verify` con bcrypt o argon2).
+
+## Análisis Técnico y Ejemplos por Lenguaje
+
+### 1. Python ([python.py](./python.py))
+```python
 # Type Juggling
+if request.json['value']==0:
+    pass
+```
+- **Sink peligroso y causa raíz:** `request.json["value"] == 0` donde tipos booleanos (`True`/`False`) pueden evaluar a 1 o 0.
+- **Mecanismo de explotación y vector:** Bypass lógico de verificaciones de estado o flags.
+- **Remediación idiomática:** Validar tipos estrictamente con `isinstance(val, int) and not isinstance(val, bool)`.
 
-Este README aplica a todos los ejemplos de la carpeta. Aunque la sintaxis cambia entre lenguajes, la causa raiz de la vulnerabilidad es la misma.
+### 2. JavaScript / Node.js ([javascript.js](./javascript.js))
+```javascript
+// Type Juggling
+function demo(req, res) {
+  if(req.body.value==0){res.send('ok');}
+  }
+```
+- **Sink peligroso y causa raíz:** Uso de `==` comparando arrays vacíos, ceros o strings (ej. `[] == 0` es true).
+- **Mecanismo de explotación y vector:** Bypass de autenticación o validación de tokens.
+- **Remediación idiomática:** Usar siempre el operador de igualdad estricta `===`.
 
-## Que hace vulnerable al patron
-La vulnerabilidad aparece cuando comparaciones o validaciones dependen de conversiones implicitas entre tipos.
-Si el lenguaje convierte automaticamente strings, numeros, booleanos o nulos, un atacante puede enviar valores que parezcan distintos para la aplicacion pero equivalentes para la operacion critica.
+### 3. Java ([java.java](./java.java))
+```java
+// Type Juggling
+public class Example {
+  public void demo() throws Exception {
+    // Java es tipado fuerte; el riesgo aparece en parsers o comparaciones custom debiles.
+      }
+}
+```
+- **Sink peligroso y causa raíz:** Java es de tipado estático, pero comparar Strings con `==` en vez de `.equals()` causa fallos lógicos.
+- **Mecanismo de explotación y vector:** Fallas de validación de tokens.
+- **Remediación idiomática:** Usar `.equals()` o `MessageDigest.isEqual()` para evitar además ataques de timing.
 
-## Como identificar casos similares
-- Uso de comparaciones debiles o no estrictas.
-- Conversion automatica de tipos en autenticacion, hashes o permisos.
-- Datos del usuario comparados sin normalizacion previa.
+### 4. Go ([go.go](./go.go))
+```go
+// Type Juggling
+package main
+func demo() {
+  // Go es tipado fuerte; el riesgo aparece al mapear interfaces o JSON debilmente.
+  }
+```
+- **Sink peligroso y causa raíz:** En Go el tipado estático previene type juggling; el análogo es mapear JSON a `interface{}`.
+- **Mecanismo de explotación y vector:** Comportamiento inesperado al castear.
+- **Remediación idiomática:** Desempaquetar en structs tipados y validar tipos explícitamente.
 
-## Explicacion por lenguaje
-### Python (`python.py`)
-Fragmento representativo: `if request.json['value']==0: pass`
-En este ejemplo, lo vulnerable es basar una decision de seguridad en una comparacion donde el lenguaje puede cambiar el tipo o valor efectivo. En Python, usar f-strings, concatenacion, carga directa de objetos o parseo sin restricciones no agrega ninguna proteccion automatica.
-Para encontrar casos parecidos en Python, busca comparaciones debiles, coerciones implicitas y mezclas de strings/numeros/booleanos en decisiones sensibles.
+### 5. PHP ([php.php](./php.php))
+```php
+<?php
+// Type Juggling
+if(md5($_POST['password'])=='0e123456'){echo 'ok';}
+```
+- **Sink peligroso y causa raíz:** `md5($_POST["password"]) == "0e123456"`.
+- **Mecanismo de explotación y vector:** Bypass de autenticación encontrando cualquier contraseña cuyo hash comience en `0e` seguido de números.
+- **Remediación idiomática:** Usar comparación estricta y segura en tiempo constante con `hash_equals()`.
 
-### JavaScript (`javascript.js`)
-Fragmento representativo: `function demo(req, res) { if(req.body.value==0){res.send('ok');} }`
-En este ejemplo, lo vulnerable es basar una decision de seguridad en una comparacion donde el lenguaje puede cambiar el tipo o valor efectivo. En JavaScript, los valores que vienen de `req`, `body`, `query` o merges de objetos llegan intactos al sink si no se validan antes.
-Para encontrar casos parecidos en JavaScript, busca comparaciones debiles, coerciones implicitas y mezclas de strings/numeros/booleanos en decisiones sensibles.
+### 6. C# (.NET) ([csharp.cs](./csharp.cs))
+```csharp
+// Type Juggling
+public class Example {
+  public void Demo() {
+    if ((Request.Form["value"] ?? "0") == "0") { }
+      }
+}
+```
+- **Sink peligroso y causa raíz:** No aplica type juggling implícito.
+- **Mecanismo de explotación y vector:** N/A.
+- **Remediación idiomática:** Usar métodos de comparación seguros en tiempo constante para hashes.
 
-### Java (`java.java`)
-Fragmento representativo: `public class Example { public void demo() throws Exception { } }`
-En este ejemplo, lo vulnerable es basar una decision de seguridad en una comparacion donde el lenguaje puede cambiar el tipo o valor efectivo. En Java, concatenar `String`, deserializar o consumir datos de `request` deja toda la seguridad en la logica de la aplicacion.
-Para encontrar casos parecidos en Java, busca comparaciones debiles, coerciones implicitas y mezclas de strings/numeros/booleanos en decisiones sensibles.
+### 7. Ruby ([ruby.rb](./ruby.rb))
+```ruby
+# Type Juggling
+def demo(params)
+  if params[:value].to_i == 0
+  end
+  end
+```
+- **Sink peligroso y causa raíz:** Comparación de objetos con conversiones implícitas no deseadas.
+- **Mecanismo de explotación y vector:** Bypass de controles de acceso.
+- **Remediación idiomática:** Verificar clases de objetos y usar comparación estricta.
 
-### Go (`go.go`)
-Fragmento representativo: `package main func demo() { }`
-En este ejemplo, lo vulnerable es basar una decision de seguridad en una comparacion donde el lenguaje puede cambiar el tipo o valor efectivo. En Go, tomar valores desde `r.URL.Query()`, `body` o estructuras similares y pasarlos a APIs sensibles no introduce sanitizacion por defecto.
-Para encontrar casos parecidos en Go, busca comparaciones debiles, coerciones implicitas y mezclas de strings/numeros/booleanos en decisiones sensibles.
+### 8. Rust ([rust.rs](./rust.rs))
+```rust
+// Type Juggling
+fn demo() {
+  // Rust es tipado fuerte; el riesgo aparece en parsers o coerciones manuales.
+  }
+```
+- **Sink peligroso y causa raíz:** Rust previene conversiones implícitas por diseño de su sistema de tipos.
+- **Mecanismo de explotación y vector:** N/A.
+- **Remediación idiomática:** Uso estándar de tipos fuertemente definidos.
 
-### PHP (`php.php`)
-Fragmento representativo: `if(md5($_POST['password'])=='0e123456'){echo 'ok';}`
-En este ejemplo, lo vulnerable es basar una decision de seguridad en una comparacion donde el lenguaje puede cambiar el tipo o valor efectivo. En PHP, usar `$_GET`, `$_POST`, `php://input` o variables equivalentes directamente es un patron clasico de vulnerabilidad.
-Para encontrar casos parecidos en PHP, busca comparaciones debiles, coerciones implicitas y mezclas de strings/numeros/booleanos en decisiones sensibles.
+### 9. Perl ([perl.pl](./perl.pl))
+```perl
+# Type Juggling
+sub demo {
+  if (param('value') == 0) { }
+  }
+```
+- **Sink peligroso y causa raíz:** Uso de `==` en lugar de `eq` para strings en Perl.
+- **Mecanismo de explotación y vector:** Bypass lógico de comprobaciones.
+- **Remediación idiomática:** Usar `eq` para cadenas y `==` únicamente para valores numéricos explícitos.
 
-### Perl (`perl.pl`)
-Fragmento representativo: `sub demo { if (param('value') == 0) { } }`
-En este ejemplo, lo vulnerable es basar una decision de seguridad en una comparacion donde el lenguaje puede cambiar el tipo o valor efectivo. En Perl, las variables interpoladas o concatenadas conservan el control del atacante sobre la operacion final.
-Para encontrar casos parecidos en Perl, busca comparaciones debiles, coerciones implicitas y mezclas de strings/numeros/booleanos en decisiones sensibles.
-
-### Pascal (`pascal.pas`)
-Fragmento representativo: `program Example; begin if StrToIntDef(Request.ContentFields.Values['value'], 0) = 0 then ; end.`
-En este ejemplo, lo vulnerable es basar una decision de seguridad en una comparacion donde el lenguaje puede cambiar el tipo o valor efectivo. En Pascal, concatenar strings o reutilizar datos de `Request` transmite el valor no confiable hasta la operacion sensible.
-Para encontrar casos parecidos en Pascal, busca comparaciones debiles, coerciones implicitas y mezclas de strings/numeros/booleanos en decisiones sensibles.
-
-### Ruby (`ruby.rb`)
-Fragmento representativo: `def demo(params) if params[:value].to_i == 0 end end`
-En este ejemplo, lo vulnerable es basar una decision de seguridad en una comparacion donde el lenguaje puede cambiar el tipo o valor efectivo. En Ruby, `params` e interpolacion hacen muy facil que la entrada del usuario llegue intacta a una API peligrosa.
-Para encontrar casos parecidos en Ruby, busca comparaciones debiles, coerciones implicitas y mezclas de strings/numeros/booleanos en decisiones sensibles.
-
-### Rust (`rust.rs`)
-Fragmento representativo: `fn demo() { }`
-En este ejemplo, lo vulnerable es basar una decision de seguridad en una comparacion donde el lenguaje puede cambiar el tipo o valor efectivo. En Rust, la seguridad de memoria no evita fallas de logica: deserializar, concatenar o invocar APIs peligrosas con datos no confiables sigue siendo riesgoso.
-Para encontrar casos parecidos en Rust, busca comparaciones debiles, coerciones implicitas y mezclas de strings/numeros/booleanos en decisiones sensibles.
-
-### C# (`csharp.cs`)
-Fragmento representativo: `public class Example { public void Demo() { if ((Request.Form["value"] ?? "0") == "0") { } } }`
-En este ejemplo, lo vulnerable es basar una decision de seguridad en una comparacion donde el lenguaje puede cambiar el tipo o valor efectivo. En C#, interpolacion, concatenacion, model binding o deserializacion no sustituyen validacion, autorizacion ni listas permitidas.
-Para encontrar casos parecidos en C#, busca comparaciones debiles, coerciones implicitas y mezclas de strings/numeros/booleanos en decisiones sensibles.
+### 10. Pascal / Free Pascal ([pascal.pas](./pascal.pas))
+```pascal
+{ Type Juggling }
+program Example;
+begin
+  if StrToIntDef(Request.ContentFields.Values['value'], 0) = 0 then ;
+  end.
+```
+- **Sink peligroso y causa raíz:** Tipado estático; no aplica type juggling dinámico.
+- **Mecanismo de explotación y vector:** N/A.
+- **Remediación idiomática:** Mantener el uso de tipos nativos.

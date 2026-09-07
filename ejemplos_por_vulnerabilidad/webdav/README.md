@@ -1,63 +1,128 @@
+# WebDAV Misconfiguration and Abuse
+
+## Descripción General
+Aparece cuando un servidor web tiene habilitadas extensiones WebDAV con métodos HTTP peligrosos (como `PUT`, `DELETE`, `MOVE`, `PROPFIND`) sin autenticación estricta ni restricciones de directorio. Permite a atacantes no autenticados subir scripts maliciosos (webshells) directamente mediante peticiones HTTP `PUT`.
+
+## Patrones y Señales para Análisis SAST
+- Manejadores HTTP que procesan `PUT` guardando el cuerpo directamente en la ruta solicitada.
+- Configuraciones de servidor web con WebDAV activo en directorios de publicación.
+
+## Estrategia de Mitigación y Buenas Prácticas
+- Deshabilitar extensiones y métodos WebDAV si no son estrictamente requeridos.
+- Si WebDAV es necesario, exigir autenticación robusta y restringir los métodos autorizados.
+- Impedir la escritura en directorios que permitan la ejecución de scripts del lado del servidor.
+
+## Análisis Técnico y Ejemplos por Lenguaje
+
+### 1. Python ([python.py](./python.py))
+```python
 # WebDAV Enumeration and Exploitation
+if request.method=='PUT': open(request.path.lstrip('/'),'wb').write(request.data)
+```
+- **Sink peligroso y causa raíz:** `request.method == "PUT"` escribe el contenido en el filesystem directamente.
+- **Mecanismo de explotación y vector:** Subida y ejecución arbitraria de archivos.
+- **Remediación idiomática:** Deshabilitar métodos HTTP no requeridos y exigir autenticación estricta.
 
-Este README aplica a todos los ejemplos de la carpeta. Aunque la sintaxis cambia entre lenguajes, la causa raiz de la vulnerabilidad es la misma.
+### 2. JavaScript / Node.js ([javascript.js](./javascript.js))
+```javascript
+// WebDAV Enumeration and Exploitation
+function demo(req, res) {
+  if(req.method==='PUT')fs.writeFileSync(req.path,req.body);
+  }
+```
+- **Sink peligroso y causa raíz:** Manejador Express `app.put("*")` guardando archivos con nombres de la URL.
+- **Mecanismo de explotación y vector:** Sobrescritura de recursos de la aplicación.
+- **Remediación idiomática:** Rechazar métodos HTTP de escritura arbitraria.
 
-## Que hace vulnerable al patron
-La vulnerabilidad existe cuando un endpoint WebDAV permite listar, subir, mover o sobrescribir recursos sin autorizacion suficiente.
-Metodos como `PROPFIND`, `PUT`, `MOVE` o `DELETE` amplian mucho la superficie. Si estan habilitados sin controles estrictos, el atacante puede manipular contenido del servidor.
+### 3. Java ([java.java](./java.java))
+```java
+// WebDAV Enumeration and Exploitation
+public class Example {
+  public void demo() throws Exception {
+    if(request.getMethod().equals("PUT")) Files.write(Path.of(request.getRequestURI()), request.getInputStream().readAllBytes());
+      }
+}
+```
+- **Sink peligroso y causa raíz:** Configuración de servlets WebDAV en Tomcat con `readonly=false` sin autenticación.
+- **Mecanismo de explotación y vector:** RCE mediante subida de archivos `.jsp` con `PUT`.
+- **Remediación idiomática:** Configurar `readonly=true` en el WebDAV servlet de Tomcat.
 
-## Como identificar casos similares
-- WebDAV activo en rutas publicas sin autenticacion fuerte.
-- Aceptacion de `PUT` o `MOVE` sobre rutas arbitrarias.
-- Respuestas a `PROPFIND` que revelan estructura o metadatos sensibles.
+### 4. Go ([go.go](./go.go))
+```go
+// WebDAV Enumeration and Exploitation
+package main
+func demo() {
+  if r.Method=="PUT" { os.WriteFile(r.URL.Path[1:],body,0644) }
+  }
+```
+- **Sink peligroso y causa raíz:** Servidor HTTP procesando método `PUT` escribiendo en `r.URL.Path`.
+- **Mecanismo de explotación y vector:** Subida no autorizada de archivos.
+- **Remediación idiomática:** Restringir métodos a GET/POST y aplicar control de acceso.
 
-## Explicacion por lenguaje
-### Python (`python.py`)
-Fragmento representativo: `if request.method=='PUT': open(request.path.lstrip('/'),'wb').write(request.data)`
-En este ejemplo, lo vulnerable es exponer operaciones de gestion de archivos sobre el servidor sin controles estrictos por metodo, ruta y usuario. En Python, usar f-strings, concatenacion, carga directa de objetos o parseo sin restricciones no agrega ninguna proteccion automatica.
-Para encontrar casos parecidos en Python, busca manejo de metodos WebDAV o escritura directa de recursos HTTP sin checks fuertes de autenticacion y ruta.
+### 5. PHP ([php.php](./php.php))
+```php
+<?php
+// WebDAV Enumeration and Exploitation
+if($_SERVER['REQUEST_METHOD']==='PUT'){file_put_contents($_SERVER['REQUEST_URI'],file_get_contents('php://input'));}
+```
+- **Sink peligroso y causa raíz:** Script PHP que procesa `PUT` y escribe en `$SERVER["REQUEST_URI"]`.
+- **Mecanismo de explotación y vector:** Subida de webshells PHP ejecutables en el servidor.
+- **Remediación idiomática:** Desactivar WebDAV en Apache/Nginx y requerir autenticación.
 
-### JavaScript (`javascript.js`)
-Fragmento representativo: `function demo(req, res) { if(req.method==='PUT')fs.writeFileSync(req.path,req.body); }`
-En este ejemplo, lo vulnerable es exponer operaciones de gestion de archivos sobre el servidor sin controles estrictos por metodo, ruta y usuario. En JavaScript, los valores que vienen de `req`, `body`, `query` o merges de objetos llegan intactos al sink si no se validan antes.
-Para encontrar casos parecidos en JavaScript, busca manejo de metodos WebDAV o escritura directa de recursos HTTP sin checks fuertes de autenticacion y ruta.
+### 6. C# (.NET) ([csharp.cs](./csharp.cs))
+```csharp
+// WebDAV Enumeration and Exploitation
+public class Example {
+  public void Demo() {
+    if (Request.Method == "PUT") File.WriteAllBytes(Request.Path, body);
+      }
+}
+```
+- **Sink peligroso y causa raíz:** Módulo WebDAV habilitado en IIS en carpetas con permisos de ejecución.
+- **Mecanismo de explotación y vector:** Subida de archivos `.aspx` y ejecución de código.
+- **Remediación idiomática:** Desinstalar o deshabilitar el módulo WebDAV de IIS.
 
-### Java (`java.java`)
-Fragmento representativo: `public class Example { public void demo() throws Exception { if(request.getMethod().equals("PUT")) Files.write(Path.of(request.getRequestURI()), request.getInputStream().readAll...`
-En este ejemplo, lo vulnerable es exponer operaciones de gestion de archivos sobre el servidor sin controles estrictos por metodo, ruta y usuario. En Java, concatenar `String`, deserializar o consumir datos de `request` deja toda la seguridad en la logica de la aplicacion.
-Para encontrar casos parecidos en Java, busca manejo de metodos WebDAV o escritura directa de recursos HTTP sin checks fuertes de autenticacion y ruta.
+### 7. Ruby ([ruby.rb](./ruby.rb))
+```ruby
+# WebDAV Enumeration and Exploitation
+def demo(params)
+  File.binwrite(request.path, request.body.read) if request.put?
+  end
+```
+- **Sink peligroso y causa raíz:** Controladores que admiten subida vía `PUT` en rutas públicas.
+- **Mecanismo de explotación y vector:** Carga de archivos no autorizada.
+- **Remediación idiomática:** Deshabilitar rutas WebDAV abiertas.
 
-### Go (`go.go`)
-Fragmento representativo: `package main func demo() { if r.Method=="PUT" { os.WriteFile(r.URL.Path[1:],body,0644) } }`
-En este ejemplo, lo vulnerable es exponer operaciones de gestion de archivos sobre el servidor sin controles estrictos por metodo, ruta y usuario. En Go, tomar valores desde `r.URL.Query()`, `body` o estructuras similares y pasarlos a APIs sensibles no introduce sanitizacion por defecto.
-Para encontrar casos parecidos en Go, busca manejo de metodos WebDAV o escritura directa de recursos HTTP sin checks fuertes de autenticacion y ruta.
+### 8. Rust ([rust.rs](./rust.rs))
+```rust
+// WebDAV Enumeration and Exploitation
+fn demo() {
+  std::fs::write(path, body)?;
+  }
+```
+- **Sink peligroso y causa raíz:** Servidores Actix/Axum con rutas `PUT` sin middleware de autenticación.
+- **Mecanismo de explotación y vector:** Sobrescritura de archivos.
+- **Remediación idiomática:** Exigir autenticación y validar destinos de escritura.
 
-### PHP (`php.php`)
-Fragmento representativo: `if($_SERVER['REQUEST_METHOD']==='PUT'){file_put_contents($_SERVER['REQUEST_URI'],file_get_contents('php://input'));}`
-En este ejemplo, lo vulnerable es exponer operaciones de gestion de archivos sobre el servidor sin controles estrictos por metodo, ruta y usuario. En PHP, usar `$_GET`, `$_POST`, `php://input` o variables equivalentes directamente es un patron clasico de vulnerabilidad.
-Para encontrar casos parecidos en PHP, busca manejo de metodos WebDAV o escritura directa de recursos HTTP sin checks fuertes de autenticacion y ruta.
+### 9. Perl ([perl.pl](./perl.pl))
+```perl
+# WebDAV Enumeration and Exploitation
+sub demo {
+  if (request_method() eq 'PUT') { ... }
+  }
+```
+- **Sink peligroso y causa raíz:** Manejador de métodos `PUT` y `MOVE` sin credenciales.
+- **Mecanismo de explotación y vector:** Modificación y eliminación de archivos del sitio.
+- **Remediación idiomática:** Deshabilitar soporte para WebDAV no autorizado.
 
-### Perl (`perl.pl`)
-Fragmento representativo: `sub demo { if (request_method() eq 'PUT') { ... } }`
-En este ejemplo, lo vulnerable es exponer operaciones de gestion de archivos sobre el servidor sin controles estrictos por metodo, ruta y usuario. En Perl, las variables interpoladas o concatenadas conservan el control del atacante sobre la operacion final.
-Para encontrar casos parecidos en Perl, busca manejo de metodos WebDAV o escritura directa de recursos HTTP sin checks fuertes de autenticacion y ruta.
-
-### Pascal (`pascal.pas`)
-Fragmento representativo: `program Example; begin if Request.Method = 'PUT' then SaveFile(Request.PathInfo, Request.Content); end.`
-En este ejemplo, lo vulnerable es exponer operaciones de gestion de archivos sobre el servidor sin controles estrictos por metodo, ruta y usuario. En Pascal, concatenar strings o reutilizar datos de `Request` transmite el valor no confiable hasta la operacion sensible.
-Para encontrar casos parecidos en Pascal, busca manejo de metodos WebDAV o escritura directa de recursos HTTP sin checks fuertes de autenticacion y ruta.
-
-### Ruby (`ruby.rb`)
-Fragmento representativo: `def demo(params) File.binwrite(request.path, request.body.read) if request.put? end`
-En este ejemplo, lo vulnerable es exponer operaciones de gestion de archivos sobre el servidor sin controles estrictos por metodo, ruta y usuario. En Ruby, `params` e interpolacion hacen muy facil que la entrada del usuario llegue intacta a una API peligrosa.
-Para encontrar casos parecidos en Ruby, busca manejo de metodos WebDAV o escritura directa de recursos HTTP sin checks fuertes de autenticacion y ruta.
-
-### Rust (`rust.rs`)
-Fragmento representativo: `fn demo() { std::fs::write(path, body)?; }`
-En este ejemplo, lo vulnerable es exponer operaciones de gestion de archivos sobre el servidor sin controles estrictos por metodo, ruta y usuario. En Rust, la seguridad de memoria no evita fallas de logica: deserializar, concatenar o invocar APIs peligrosas con datos no confiables sigue siendo riesgoso.
-Para encontrar casos parecidos en Rust, busca manejo de metodos WebDAV o escritura directa de recursos HTTP sin checks fuertes de autenticacion y ruta.
-
-### C# (`csharp.cs`)
-Fragmento representativo: `public class Example { public void Demo() { if (Request.Method == "PUT") File.WriteAllBytes(Request.Path, body); } }`
-En este ejemplo, lo vulnerable es exponer operaciones de gestion de archivos sobre el servidor sin controles estrictos por metodo, ruta y usuario. En C#, interpolacion, concatenacion, model binding o deserializacion no sustituyen validacion, autorizacion ni listas permitidas.
-Para encontrar casos parecidos en C#, busca manejo de metodos WebDAV o escritura directa de recursos HTTP sin checks fuertes de autenticacion y ruta.
+### 10. Pascal / Free Pascal ([pascal.pas](./pascal.pas))
+```pascal
+{ WebDAV Enumeration and Exploitation }
+program Example;
+begin
+  if Request.Method = 'PUT' then SaveFile(Request.PathInfo, Request.Content);
+  end.
+```
+- **Sink peligroso y causa raíz:** Implementación de endpoints WebDAV sin control de acceso.
+- **Mecanismo de explotación y vector:** Escritura arbitraria en el servidor.
+- **Remediación idiomática:** Restringir métodos permitidos en el despachador HTTP.

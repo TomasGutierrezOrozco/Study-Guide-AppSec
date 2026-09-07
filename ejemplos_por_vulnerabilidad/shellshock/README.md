@@ -1,63 +1,128 @@
+# ShellShock (CVE-2014-6271)
+
+## Descripción General
+Es una vulnerabilidad crítica en versiones de GNU Bash anteriores a la 4.3 que permite la ejecución remota de comandos. Ocurre cuando Bash procesa variables de entorno que contienen definiciones de funciones con sintaxis `() { :; }; comando`. Al exportar la variable, Bash no se detiene en la definición de la función y ejecuta inmediatamente el comando concatenado.
+
+## Patrones y Señales para Análisis SAST
+- Scripts CGI que pasan cabeceras HTTP como variables de entorno a subshells Bash.
+- Uso de `os.system()`, `shell_exec()`, `exec("bash -c ...")` en sistemas con Bash desactualizado.
+
+## Estrategia de Mitigación y Buenas Prácticas
+- Actualizar GNU Bash a una versión parcheada (Bash >= 4.3).
+- Evitar pasar variables de entorno controladas por el usuario a subprocesos del shell.
+- Reemplazar scripts CGI en Bash por lenguajes y controladores de aplicaciones modernos.
+
+## Análisis Técnico y Ejemplos por Lenguaje
+
+### 1. Python ([python.py](./python.py))
+```python
 # ShellShock
+os.system('echo $HTTP_USER_AGENT')
+```
+- **Sink peligroso y causa raíz:** Invocación de shells Bash heredando variables de entorno de petición HTTP.
+- **Mecanismo de explotación y vector:** RCE inmediato si la variable contiene payloads de Shellshock.
+- **Remediación idiomática:** Actualizar Bash y pasar argumentos sin shell: `subprocess.run(["binary", arg])`.
 
-Este README aplica a todos los ejemplos de la carpeta. Aunque la sintaxis cambia entre lenguajes, la causa raiz de la vulnerabilidad es la misma.
+### 2. JavaScript / Node.js ([javascript.js](./javascript.js))
+```javascript
+// ShellShock
+function demo(req, res) {
+  exec('bash -c "echo $HTTP_USER_AGENT"');
+  }
+```
+- **Sink peligroso y causa raíz:** `exec("bash -c ...")` heredando `process.env` con cabeceras de usuario.
+- **Mecanismo de explotación y vector:** RCE en el servidor.
+- **Remediación idiomática:** Evitar invocar subshells Bash y actualizar el sistema operativo base.
 
-## Que hace vulnerable al patron
-El patron vulnerable aparece cuando datos de entorno controlables por el atacante llegan a Bash u otro shell con parsing inseguro.
-Si un servicio pasa headers, variables CGI u otros datos del usuario a un shell vulnerable, el interprete puede ejecutar comandos adicionales durante la evaluacion de variables.
+### 3. Java ([java.java](./java.java))
+```java
+// ShellShock
+public class Example {
+  public void demo() throws Exception {
+    new ProcessBuilder("bash","-c","echo $HTTP_USER_AGENT").start();
+      }
+}
+```
+- **Sink peligroso y causa raíz:** `Runtime.getRuntime().exec("bash ...")` en servidores con Bash vulnerable.
+- **Mecanismo de explotación y vector:** Ejecución remota de comandos.
+- **Remediación idiomática:** Usar `ProcessBuilder` directo sin shell y actualizar Bash en el contenedor.
 
-## Como identificar casos similares
-- Aplicaciones CGI o wrappers que exportan headers a variables de entorno.
-- Invocaciones a shell con datos del usuario en variables o comandos.
-- Dependencia de Bash en rutas expuestas por red.
+### 4. Go ([go.go](./go.go))
+```go
+// ShellShock
+package main
+func demo() {
+  exec.Command("bash","-c","echo $HTTP_USER_AGENT").Run()
+  }
+```
+- **Sink peligroso y causa raíz:** Invocación de `bash` pasando variables de entorno del cliente.
+- **Mecanismo de explotación y vector:** RCE.
+- **Remediación idiomática:** Ejecutar binarios directamente con `exec.Command` sin shell wrapper.
 
-## Explicacion por lenguaje
-### Python (`python.py`)
-Fragmento representativo: `os.system('echo $HTTP_USER_AGENT')`
-En este ejemplo, lo vulnerable es dejar que datos del atacante alcancen el entorno o la linea de comandos de un shell interpretable. En Python, usar f-strings, concatenacion, carga directa de objetos o parseo sin restricciones no agrega ninguna proteccion automatica.
-Para encontrar casos parecidos en Python, busca invocaciones a shell, exportacion de variables desde input y dependencias CGI/Bash en rutas expuestas.
+### 5. PHP ([php.php](./php.php))
+```php
+<?php
+// ShellShock
+echo shell_exec('env');
+```
+- **Sink peligroso y causa raíz:** Servidores Apache con `mod_cgi` ejecutando scripts Bash ante peticiones web.
+- **Mecanismo de explotación y vector:** RCE enviando cabecera `User-Agent: () { :; }; /bin/cat /etc/passwd`.
+- **Remediación idiomática:** Actualizar el binario de Bash en el sistema y eliminar scripts CGI en shell.
 
-### JavaScript (`javascript.js`)
-Fragmento representativo: `function demo(req, res) { exec('bash -c "echo $HTTP_USER_AGENT"'); }`
-En este ejemplo, lo vulnerable es dejar que datos del atacante alcancen el entorno o la linea de comandos de un shell interpretable. En JavaScript, los valores que vienen de `req`, `body`, `query` o merges de objetos llegan intactos al sink si no se validan antes.
-Para encontrar casos parecidos en JavaScript, busca invocaciones a shell, exportacion de variables desde input y dependencias CGI/Bash en rutas expuestas.
+### 6. C# (.NET) ([csharp.cs](./csharp.cs))
+```csharp
+// ShellShock
+public class Example {
+  public void Demo() {
+    Process.Start("bash", "-c \"echo $HTTP_USER_AGENT\"");
+      }
+}
+```
+- **Sink peligroso y causa raíz:** Invocación de scripts Bash en entornos Linux/Docker heredando variables.
+- **Mecanismo de explotación y vector:** RCE en el contenedor.
+- **Remediación idiomática:** Actualizar las imágenes base de contenedor a versiones modernas protegidas.
 
-### Java (`java.java`)
-Fragmento representativo: `public class Example { public void demo() throws Exception { new ProcessBuilder("bash","-c","echo $HTTP_USER_AGENT").start(); } }`
-En este ejemplo, lo vulnerable es dejar que datos del atacante alcancen el entorno o la linea de comandos de un shell interpretable. En Java, concatenar `String`, deserializar o consumir datos de `request` deja toda la seguridad en la logica de la aplicacion.
-Para encontrar casos parecidos en Java, busca invocaciones a shell, exportacion de variables desde input y dependencias CGI/Bash en rutas expuestas.
+### 7. Ruby ([ruby.rb](./ruby.rb))
+```ruby
+# ShellShock
+def demo(params)
+  system('bash -c "echo $HTTP_USER_AGENT"')
+  end
+```
+- **Sink peligroso y causa raíz:** Llamadas a `system("bash -c ...")` con entorno contaminado.
+- **Mecanismo de explotación y vector:** RCE.
+- **Remediación idiomática:** Usar llamadas de sistema vectorizadas sin invocar shell.
 
-### Go (`go.go`)
-Fragmento representativo: `package main func demo() { exec.Command("bash","-c","echo $HTTP_USER_AGENT").Run() }`
-En este ejemplo, lo vulnerable es dejar que datos del atacante alcancen el entorno o la linea de comandos de un shell interpretable. En Go, tomar valores desde `r.URL.Query()`, `body` o estructuras similares y pasarlos a APIs sensibles no introduce sanitizacion por defecto.
-Para encontrar casos parecidos en Go, busca invocaciones a shell, exportacion de variables desde input y dependencias CGI/Bash en rutas expuestas.
+### 8. Rust ([rust.rs](./rust.rs))
+```rust
+// ShellShock
+fn demo() {
+  Command::new("bash").arg("-c").arg("echo $HTTP_USER_AGENT").output()?;
+  }
+```
+- **Sink peligroso y causa raíz:** Llamadas a `Command::new("bash")`.
+- **Mecanismo de explotación y vector:** RCE si el sistema host tiene Bash vulnerable.
+- **Remediación idiomática:** Actualizar Bash y no invocar shell.
 
-### PHP (`php.php`)
-Fragmento representativo: `echo shell_exec('env');`
-En este ejemplo, lo vulnerable es dejar que datos del atacante alcancen el entorno o la linea de comandos de un shell interpretable. En PHP, usar `$_GET`, `$_POST`, `php://input` o variables equivalentes directamente es un patron clasico de vulnerabilidad.
-Para encontrar casos parecidos en PHP, busca invocaciones a shell, exportacion de variables desde input y dependencias CGI/Bash en rutas expuestas.
+### 9. Perl ([perl.pl](./perl.pl))
+```perl
+# ShellShock
+sub demo {
+  system('bash', '-c', 'echo $HTTP_USER_AGENT');
+  }
+```
+- **Sink peligroso y causa raíz:** Scripts CGI en Perl que llaman a comandos shell vía `system()` o pipes.
+- **Mecanismo de explotación y vector:** Compromiso total del servidor.
+- **Remediación idiomática:** Actualizar Bash y evitar la interpolación en llamadas al shell.
 
-### Perl (`perl.pl`)
-Fragmento representativo: `sub demo { system('bash', '-c', 'echo $HTTP_USER_AGENT'); }`
-En este ejemplo, lo vulnerable es dejar que datos del atacante alcancen el entorno o la linea de comandos de un shell interpretable. En Perl, las variables interpoladas o concatenadas conservan el control del atacante sobre la operacion final.
-Para encontrar casos parecidos en Perl, busca invocaciones a shell, exportacion de variables desde input y dependencias CGI/Bash en rutas expuestas.
-
-### Pascal (`pascal.pas`)
-Fragmento representativo: `program Example; begin RunCommand('/bin/bash', ['-c', 'echo $HTTP_USER_AGENT'], Output); end.`
-En este ejemplo, lo vulnerable es dejar que datos del atacante alcancen el entorno o la linea de comandos de un shell interpretable. En Pascal, concatenar strings o reutilizar datos de `Request` transmite el valor no confiable hasta la operacion sensible.
-Para encontrar casos parecidos en Pascal, busca invocaciones a shell, exportacion de variables desde input y dependencias CGI/Bash en rutas expuestas.
-
-### Ruby (`ruby.rb`)
-Fragmento representativo: `def demo(params) system('bash -c "echo $HTTP_USER_AGENT"') end`
-En este ejemplo, lo vulnerable es dejar que datos del atacante alcancen el entorno o la linea de comandos de un shell interpretable. En Ruby, `params` e interpolacion hacen muy facil que la entrada del usuario llegue intacta a una API peligrosa.
-Para encontrar casos parecidos en Ruby, busca invocaciones a shell, exportacion de variables desde input y dependencias CGI/Bash en rutas expuestas.
-
-### Rust (`rust.rs`)
-Fragmento representativo: `fn demo() { Command::new("bash").arg("-c").arg("echo $HTTP_USER_AGENT").output()?; }`
-En este ejemplo, lo vulnerable es dejar que datos del atacante alcancen el entorno o la linea de comandos de un shell interpretable. En Rust, la seguridad de memoria no evita fallas de logica: deserializar, concatenar o invocar APIs peligrosas con datos no confiables sigue siendo riesgoso.
-Para encontrar casos parecidos en Rust, busca invocaciones a shell, exportacion de variables desde input y dependencias CGI/Bash en rutas expuestas.
-
-### C# (`csharp.cs`)
-Fragmento representativo: `public class Example { public void Demo() { Process.Start("bash", "-c \"echo $HTTP_USER_AGENT\""); } }`
-En este ejemplo, lo vulnerable es dejar que datos del atacante alcancen el entorno o la linea de comandos de un shell interpretable. En C#, interpolacion, concatenacion, model binding o deserializacion no sustituyen validacion, autorizacion ni listas permitidas.
-Para encontrar casos parecidos en C#, busca invocaciones a shell, exportacion de variables desde input y dependencias CGI/Bash en rutas expuestas.
+### 10. Pascal / Free Pascal ([pascal.pas](./pascal.pas))
+```pascal
+{ ShellShock }
+program Example;
+begin
+  RunCommand('/bin/bash', ['-c', 'echo $HTTP_USER_AGENT'], Output);
+  end.
+```
+- **Sink peligroso y causa raíz:** Llamadas a `ExecuteProcess` pasando por shells vulnerables.
+- **Mecanismo de explotación y vector:** Ejecución de código.
+- **Remediación idiomática:** Actualizar el entorno de ejecución.

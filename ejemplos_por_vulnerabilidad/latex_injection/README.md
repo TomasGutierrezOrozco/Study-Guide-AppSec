@@ -1,63 +1,127 @@
 # LaTeX Injection
 
-Este README aplica a todos los ejemplos de la carpeta. Aunque la sintaxis cambia entre lenguajes, la causa raiz de la vulnerabilidad es la misma.
+## Descripción General
+Ocurre cuando una aplicación genera documentos PDF o imágenes a partir de plantillas LaTeX concatenando texto no confiable del usuario. Comandos como `\input{/etc/passwd}` permiten leer archivos locales del servidor, y directivas como `\write18` permiten ejecutar comandos en el sistema operativo.
 
-## Que hace vulnerable al patron
-La vulnerabilidad existe cuando texto controlado por el usuario se inserta en documentos LaTeX que luego son compilados.
-LaTeX no es solo formato: tiene macros, inclusiones y, segun la configuracion, lectura de archivos o ejecucion de comandos. Si la entrada no se neutraliza, el atacante puede inyectar instrucciones activas.
+## Patrones y Señales para Análisis SAST
+- Concatenación de variables en código fuente `.tex` o llamadas a `pdflatex`.
+- Ausencia de deshabilitación de comandos shell (`-no-shell-escape`).
 
-## Como identificar casos similares
-- Interpolacion directa de datos en plantillas `.tex`.
-- Compilacion automatica de documentos editables por usuarios.
-- Uso de macros potentes cerca de contenido no confiable.
+## Estrategia de Mitigación y Buenas Prácticas
+- Escapar todos los caracteres especiales de LaTeX (`\`, `{`, `}`, `$`, `&`, `%`, `#`, `_`, `^`, `~`).
+- Ejecutar el compilador LaTeX en un sandbox aislado con banderas de seguridad: `pdflatex -no-shell-escape`.
 
-## Explicacion por lenguaje
-### Python (`python.py`)
-Fragmento representativo: `latex='\\input{'+request.args['name']+'}'`
-En este ejemplo, lo vulnerable es pasar texto no confiable a un motor que interpreta comandos, macros y estructuras activas. En Python, usar f-strings, concatenacion, carga directa de objetos o parseo sin restricciones no agrega ninguna proteccion automatica.
-Para encontrar casos parecidos en Python, busca entradas de usuario incrustadas en templates LaTeX sin escape o sin restricciones del compilador.
+## Análisis Técnico y Ejemplos por Lenguaje
 
-### JavaScript (`javascript.js`)
-Fragmento representativo: `function demo(req, res) { const tex=`\\input{${req.query.name}}`; }`
-En este ejemplo, lo vulnerable es pasar texto no confiable a un motor que interpreta comandos, macros y estructuras activas. En JavaScript, los valores que vienen de `req`, `body`, `query` o merges de objetos llegan intactos al sink si no se validan antes.
-Para encontrar casos parecidos en JavaScript, busca entradas de usuario incrustadas en templates LaTeX sin escape o sin restricciones del compilador.
+### 1. Python ([python.py](./python.py))
+```python
+# LaTeX Injection
+latex='\\input{'+request.args['name']+'}'
+```
+- **Sink peligroso y causa raíz:** Concatenación de `request.args["name"]` dentro de comandos `\input{}`.
+- **Mecanismo de explotación y vector:** Lectura de archivos del servidor y RCE si shell-escape está activo.
+- **Remediación idiomática:** Sanitizar caracteres especiales o usar plantillas con motor seguro y compilación aislada.
 
-### Java (`java.java`)
-Fragmento representativo: `public class Example { public void demo() throws Exception { String tex="\\input{"+request.getParameter("name")+"}"; } }`
-En este ejemplo, lo vulnerable es pasar texto no confiable a un motor que interpreta comandos, macros y estructuras activas. En Java, concatenar `String`, deserializar o consumir datos de `request` deja toda la seguridad en la logica de la aplicacion.
-Para encontrar casos parecidos en Java, busca entradas de usuario incrustadas en templates LaTeX sin escape o sin restricciones del compilador.
+### 2. JavaScript / Node.js ([javascript.js](./javascript.js))
+```javascript
+// LaTeX Injection
+function demo(req, res) {
+  const tex=`\\input{${req.query.name}}`;
+  }
+```
+- **Sink peligroso y causa raíz:** Construcción de cadenas LaTeX con parámetros de query.
+- **Mecanismo de explotación y vector:** Exfiltración de archivos confidenciales del host.
+- **Remediación idiomática:** Escapar metacaracteres de LaTeX antes de compilar el documento.
 
-### Go (`go.go`)
-Fragmento representativo: `package main func demo() { latex:="\\input{"+r.URL.Query().Get("name")+"}" }`
-En este ejemplo, lo vulnerable es pasar texto no confiable a un motor que interpreta comandos, macros y estructuras activas. En Go, tomar valores desde `r.URL.Query()`, `body` o estructuras similares y pasarlos a APIs sensibles no introduce sanitizacion por defecto.
-Para encontrar casos parecidos en Go, busca entradas de usuario incrustadas en templates LaTeX sin escape o sin restricciones del compilador.
+### 3. Java ([java.java](./java.java))
+```java
+// LaTeX Injection
+public class Example {
+  public void demo() throws Exception {
+    String tex="\\input{"+request.getParameter("name")+"}";
+      }
+}
+```
+- **Sink peligroso y causa raíz:** Interpolación de cadenas en documentos LaTeX procesados por binarios del sistema.
+- **Mecanismo de explotación y vector:** Lectura arbitraria de ficheros en el backend.
+- **Remediación idiomática:** Aplicar filtros de reemplazo estricto sobre caracteres reservados de LaTeX.
 
-### PHP (`php.php`)
-Fragmento representativo: `echo '\\input{'.$_GET['name'].'}';`
-En este ejemplo, lo vulnerable es pasar texto no confiable a un motor que interpreta comandos, macros y estructuras activas. En PHP, usar `$_GET`, `$_POST`, `php://input` o variables equivalentes directamente es un patron clasico de vulnerabilidad.
-Para encontrar casos parecidos en PHP, busca entradas de usuario incrustadas en templates LaTeX sin escape o sin restricciones del compilador.
+### 4. Go ([go.go](./go.go))
+```go
+// LaTeX Injection
+package main
+func demo() {
+  latex:="\\input{"+r.URL.Query().Get("name")+"}"
+  }
+```
+- **Sink peligroso y causa raíz:** Formateo de documentos `.tex` con datos crudos del usuario.
+- **Mecanismo de explotación y vector:** Compromiso de la confidencialidad de archivos del servidor.
+- **Remediación idiomática:** Restringir la entrada a caracteres estrictamente alfanuméricos.
 
-### Perl (`perl.pl`)
-Fragmento representativo: `sub demo { $tex = '\\input{' . param('name') . '}'; }`
-En este ejemplo, lo vulnerable es pasar texto no confiable a un motor que interpreta comandos, macros y estructuras activas. En Perl, las variables interpoladas o concatenadas conservan el control del atacante sobre la operacion final.
-Para encontrar casos parecidos en Perl, busca entradas de usuario incrustadas en templates LaTeX sin escape o sin restricciones del compilador.
+### 5. PHP ([php.php](./php.php))
+```php
+<?php
+// LaTeX Injection
+echo '\\input{'.$_GET['name'].'}';
+```
+- **Sink peligroso y causa raíz:** `echo "\input{" . $_GET["name"] . "}";` en scripts que generan reportes.
+- **Mecanismo de explotación y vector:** Inclusión de archivos locales en el PDF resultante.
+- **Remediación idiomática:** Escapar backslashes y llaves con funciones de sanitización.
 
-### Pascal (`pascal.pas`)
-Fragmento representativo: `program Example; begin Latex := '\input{' + Request.QueryFields.Values['name'] + '}'; end.`
-En este ejemplo, lo vulnerable es pasar texto no confiable a un motor que interpreta comandos, macros y estructuras activas. En Pascal, concatenar strings o reutilizar datos de `Request` transmite el valor no confiable hasta la operacion sensible.
-Para encontrar casos parecidos en Pascal, busca entradas de usuario incrustadas en templates LaTeX sin escape o sin restricciones del compilador.
+### 6. C# (.NET) ([csharp.cs](./csharp.cs))
+```csharp
+// LaTeX Injection
+public class Example {
+  public void Demo() {
+    var tex = "\\input{" + Request.Query["name"] + "}";
+      }
+}
+```
+- **Sink peligroso y causa raíz:** Generación de reportes PDF concatenando código LaTeX.
+- **Mecanismo de explotación y vector:** Fuga de información confidencial.
+- **Remediación idiomática:** Reemplazar por generadores de PDF seguros que no dependan de motores LaTeX.
 
-### Ruby (`ruby.rb`)
-Fragmento representativo: `def demo(params) latex = "\\input{#{params[:name]}}" end`
-En este ejemplo, lo vulnerable es pasar texto no confiable a un motor que interpreta comandos, macros y estructuras activas. En Ruby, `params` e interpolacion hacen muy facil que la entrada del usuario llegue intacta a una API peligrosa.
-Para encontrar casos parecidos en Ruby, busca entradas de usuario incrustadas en templates LaTeX sin escape o sin restricciones del compilador.
+### 7. Ruby ([ruby.rb](./ruby.rb))
+```ruby
+# LaTeX Injection
+def demo(params)
+  latex = "\\input{#{params[:name]}}"
+  end
+```
+- **Sink peligroso y causa raíz:** Interpolación en cadenas procesadas por `pdflatex`.
+- **Mecanismo de explotación y vector:** Fuga de secretos y archivos de configuración.
+- **Remediación idiomática:** Utilizar librerías de escape de LaTeX como `latex-escaper`.
 
-### Rust (`rust.rs`)
-Fragmento representativo: `fn demo() { let latex = format!("\\input{{{}}}", name); }`
-En este ejemplo, lo vulnerable es pasar texto no confiable a un motor que interpreta comandos, macros y estructuras activas. En Rust, la seguridad de memoria no evita fallas de logica: deserializar, concatenar o invocar APIs peligrosas con datos no confiables sigue siendo riesgoso.
-Para encontrar casos parecidos en Rust, busca entradas de usuario incrustadas en templates LaTeX sin escape o sin restricciones del compilador.
+### 8. Rust ([rust.rs](./rust.rs))
+```rust
+// LaTeX Injection
+fn demo() {
+  let latex = format!("\\input{{{}}}", name);
+  }
+```
+- **Sink peligroso y causa raíz:** Construcción de fuentes LaTeX con parámetros del cliente.
+- **Mecanismo de explotación y vector:** Lectura de archivos locales en la compilación.
+- **Remediación idiomática:** Sanitizar metacaracteres reservados.
 
-### C# (`csharp.cs`)
-Fragmento representativo: `public class Example { public void Demo() { var tex = "\\input{" + Request.Query["name"] + "}"; } }`
-En este ejemplo, lo vulnerable es pasar texto no confiable a un motor que interpreta comandos, macros y estructuras activas. En C#, interpolacion, concatenacion, model binding o deserializacion no sustituyen validacion, autorizacion ni listas permitidas.
-Para encontrar casos parecidos en C#, busca entradas de usuario incrustadas en templates LaTeX sin escape o sin restricciones del compilador.
+### 9. Perl ([perl.pl](./perl.pl))
+```perl
+# LaTeX Injection
+sub demo {
+  $tex = '\\input{' . param('name') . '}';
+  }
+```
+- **Sink peligroso y causa raíz:** Inserción de texto en documentos LaTeX.
+- **Mecanismo de explotación y vector:** Lectura de `/etc/passwd` o ejecución de comandos.
+- **Remediación idiomática:** Filtrar toda directiva que comience con backslash.
+
+### 10. Pascal / Free Pascal ([pascal.pas](./pascal.pas))
+```pascal
+{ LaTeX Injection }
+program Example;
+begin
+  Latex := '\input{' + Request.QueryFields.Values['name'] + '}';
+  end.
+```
+- **Sink peligroso y causa raíz:** Generación de plantillas LaTeX con texto directo.
+- **Mecanismo de explotación y vector:** Lectura no autorizada de archivos del host.
+- **Remediación idiomática:** Sanitizar la entrada antes del formateo.

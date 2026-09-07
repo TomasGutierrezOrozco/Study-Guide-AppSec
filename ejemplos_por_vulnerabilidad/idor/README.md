@@ -1,63 +1,129 @@
+# Insecure Direct Object References (IDOR)
+
+## Descripción General
+Ocurre cuando una aplicación expone una referencia directa a un objeto interno (como un ID numérico o clave en base de datos) en la URL o parámetros, y no comprueba si el usuario que realiza la petición tiene los privilegios adecuados para acceder o modificar dicho objeto.
+
+## Patrones y Señales para Análisis SAST
+- Consultas a base de datos tipo `SELECT * FROM table WHERE id = ?` sin filtrar por el ID del usuario en sesión.
+- Rutas parametrizadas (`/invoice/<id>`, `/user/<id>`) donde el ID del recurso viene del cliente.
+
+## Estrategia de Mitigación y Buenas Prácticas
+- Filtrar siempre las consultas por el identificador del usuario autenticado: `WHERE id = ? AND owner_id = ?`.
+- Implementar una capa de autorización basada en políticas que valide la pertenencia del recurso antes de entregarlo.
+- Utilizar identificadores indirectos o aleatorios (UUIDv4) como defensa secundaria.
+
+## Análisis Técnico y Ejemplos por Lenguaje
+
+### 1. Python ([python.py](./python.py))
+```python
 # IDOR
+def demo():
+    return db.execute('SELECT * FROM invoices WHERE id=?', (request.view_args['id'],)).fetchone()
+```
+- **Sink peligroso y causa raíz:** `SELECT * FROM invoices WHERE id = ?` sin validar el `owner_id`.
+- **Mecanismo de explotación y vector:** Acceso a facturas, perfiles o documentos privados de otros usuarios.
+- **Remediación idiomática:** Añadir el filtro de sesión: `SELECT * FROM invoices WHERE id = ? AND owner_id = ?`.
 
-Este README aplica a todos los ejemplos de la carpeta. Aunque la sintaxis cambia entre lenguajes, la causa raiz de la vulnerabilidad es la misma.
+### 2. JavaScript / Node.js ([javascript.js](./javascript.js))
+```javascript
+// IDOR
+function demo(req, res) {
+  res.json(invoices[req.params.id]);
+  }
+```
+- **Sink peligroso y causa raíz:** `invoices[req.params.id]` consultado directamente desde memoria o base de datos.
+- **Mecanismo de explotación y vector:** Lectura horizontal de datos de cualquier cliente cambiando el número de ID.
+- **Remediación idiomática:** Validar: `if (invoice.userId !== req.user.id) return res.status(403).send("Forbidden");`.
 
-## Que hace vulnerable al patron
-La vulnerabilidad existe cuando el cliente puede elegir el identificador de un recurso y el servidor no verifica si tiene permiso para accederlo.
-El codigo confunde conocer un `id` con estar autorizado para usarlo. Cambiar un identificador en la URL, el body o la query alcanza para leer o modificar recursos de otro usuario.
+### 3. Java ([java.java](./java.java))
+```java
+// IDOR
+public class Example {
+  public void demo() throws Exception {
+    invoiceService.findById(Long.parseLong(request.getParameter("id")));
+      }
+}
+```
+- **Sink peligroso y causa raíz:** `invoiceRepository.findById(id)` devuelto al cliente sin comparar propietario.
+- **Mecanismo de explotación y vector:** Exposición masiva de datos personales y sensibles entre usuarios.
+- **Remediación idiomática:** Verificar: `if (!invoice.getOwnerId().equals(currentUserId)) throw new AccessDeniedException();`.
 
-## Como identificar casos similares
-- Busquedas directas por identificador recibido desde request.
-- Falta de filtros por usuario actual, tenant o rol.
-- Operaciones tipo `find(id)` sin chequeo posterior de ownership.
+### 4. Go ([go.go](./go.go))
+```go
+// IDOR
+package main
+func demo() {
+  db.QueryRow("SELECT * FROM invoices WHERE id=?",r.URL.Query().Get("id"))
+  }
+```
+- **Sink peligroso y causa raíz:** Query por ID sin validación de contexto de usuario.
+- **Mecanismo de explotación y vector:** Fuga de información confidencial.
+- **Remediación idiomática:** Incluir el usuario de sesión en la consulta SQL o validar en la capa de servicio.
 
-## Explicacion por lenguaje
-### Python (`python.py`)
-Fragmento representativo: `return db.execute('SELECT * FROM invoices WHERE id=?',(request.view_args['id'],)).fetchone()`
-En este ejemplo, lo vulnerable es confiar en el identificador que provee el cliente sin ligar el recurso al usuario autenticado o a su contexto. En Python, usar f-strings, concatenacion, carga directa de objetos o parseo sin restricciones no agrega ninguna proteccion automatica.
-Para encontrar casos parecidos en Python, busca consultas por ID y acciones sobre recursos donde el backend no compare ownership ni permisos despues de resolver el objeto.
+### 5. PHP ([php.php](./php.php))
+```php
+<?php
+// IDOR
+echo json_encode(getInvoice($_GET['id']));
+```
+- **Sink peligroso y causa raíz:** `getInvoice($_GET["id"])` ejecutado sin comprobar `$_SESSION["user_id"]`.
+- **Mecanismo de explotación y vector:** Extracción completa de registros cambiando el parámetro numérico en la URL.
+- **Remediación idiomática:** Restringir la consulta: `WHERE id = ? AND user_id = ?` pasando `$_SESSION["user_id"]`.
 
-### JavaScript (`javascript.js`)
-Fragmento representativo: `function demo(req, res) { res.json(invoices[req.params.id]); }`
-En este ejemplo, lo vulnerable es confiar en el identificador que provee el cliente sin ligar el recurso al usuario autenticado o a su contexto. En JavaScript, los valores que vienen de `req`, `body`, `query` o merges de objetos llegan intactos al sink si no se validan antes.
-Para encontrar casos parecidos en JavaScript, busca consultas por ID y acciones sobre recursos donde el backend no compare ownership ni permisos despues de resolver el objeto.
+### 6. C# (.NET) ([csharp.cs](./csharp.cs))
+```csharp
+// IDOR
+public class Example {
+  public void Demo() {
+    return Json(invoices[int.Parse(Request.Query["id"])]);
+      }
+}
+```
+- **Sink peligroso y causa raíz:** `_context.Invoices.FindAsync(id)` retornado directamente en API controller.
+- **Mecanismo de explotación y vector:** Acceso a registros de otros usuarios.
+- **Remediación idiomática:** Filtrar: `_context.Invoices.FirstOrDefaultAsync(x => x.Id == id && x.UserId == currentUserId)`.
 
-### Java (`java.java`)
-Fragmento representativo: `public class Example { public void demo() throws Exception { invoiceService.findById(Long.parseLong(request.getParameter("id"))); } }`
-En este ejemplo, lo vulnerable es confiar en el identificador que provee el cliente sin ligar el recurso al usuario autenticado o a su contexto. En Java, concatenar `String`, deserializar o consumir datos de `request` deja toda la seguridad en la logica de la aplicacion.
-Para encontrar casos parecidos en Java, busca consultas por ID y acciones sobre recursos donde el backend no compare ownership ni permisos despues de resolver el objeto.
+### 7. Ruby ([ruby.rb](./ruby.rb))
+```ruby
+# IDOR
+def demo(params)
+  render json: Invoice.find(params[:id])
+  end
+```
+- **Sink peligroso y causa raíz:** `Invoice.find(params[:id])` sin scope de usuario.
+- **Mecanismo de explotación y vector:** Bypass de autorización horizontal.
+- **Remediación idiomática:** Usar relaciones de usuario seguras: `current_user.invoices.find(params[:id])`.
 
-### Go (`go.go`)
-Fragmento representativo: `package main func demo() { db.QueryRow("SELECT * FROM invoices WHERE id=?",r.URL.Query().Get("id")) }`
-En este ejemplo, lo vulnerable es confiar en el identificador que provee el cliente sin ligar el recurso al usuario autenticado o a su contexto. En Go, tomar valores desde `r.URL.Query()`, `body` o estructuras similares y pasarlos a APIs sensibles no introduce sanitizacion por defecto.
-Para encontrar casos parecidos en Go, busca consultas por ID y acciones sobre recursos donde el backend no compare ownership ni permisos despues de resolver el objeto.
+### 8. Rust ([rust.rs](./rust.rs))
+```rust
+// IDOR
+fn demo() {
+  let invoice = find_invoice(id);
+  }
+```
+- **Sink peligroso y causa raíz:** Búsqueda de entidad sin verificar el claim del usuario autenticado.
+- **Mecanismo de explotación y vector:** Lectura no autorizada de recursos.
+- **Remediación idiomática:** Comprobar en la función: `ensure!(invoice.user_id == current_user.id, Error::Unauthorized)`.
 
-### PHP (`php.php`)
-Fragmento representativo: `echo json_encode(getInvoice($_GET['id']));`
-En este ejemplo, lo vulnerable es confiar en el identificador que provee el cliente sin ligar el recurso al usuario autenticado o a su contexto. En PHP, usar `$_GET`, `$_POST`, `php://input` o variables equivalentes directamente es un patron clasico de vulnerabilidad.
-Para encontrar casos parecidos en PHP, busca consultas por ID y acciones sobre recursos donde el backend no compare ownership ni permisos despues de resolver el objeto.
+### 9. Perl ([perl.pl](./perl.pl))
+```perl
+# IDOR
+sub demo {
+  print encode_json(get_invoice(param('id')));
+  }
+```
+- **Sink peligroso y causa raíz:** Búsqueda por clave primaria enviada por parámetro HTTP.
+- **Mecanismo de explotación y vector:** Visualización no autorizada de registros ajenos.
+- **Remediación idiomática:** Validar la pertenencia del registro antes de formatear la salida.
 
-### Perl (`perl.pl`)
-Fragmento representativo: `sub demo { print encode_json(get_invoice(param('id'))); }`
-En este ejemplo, lo vulnerable es confiar en el identificador que provee el cliente sin ligar el recurso al usuario autenticado o a su contexto. En Perl, las variables interpoladas o concatenadas conservan el control del atacante sobre la operacion final.
-Para encontrar casos parecidos en Perl, busca consultas por ID y acciones sobre recursos donde el backend no compare ownership ni permisos despues de resolver el objeto.
-
-### Pascal (`pascal.pas`)
-Fragmento representativo: `program Example; begin Response.Content := GetInvoice(Request.QueryFields.Values['id']); end.`
-En este ejemplo, lo vulnerable es confiar en el identificador que provee el cliente sin ligar el recurso al usuario autenticado o a su contexto. En Pascal, concatenar strings o reutilizar datos de `Request` transmite el valor no confiable hasta la operacion sensible.
-Para encontrar casos parecidos en Pascal, busca consultas por ID y acciones sobre recursos donde el backend no compare ownership ni permisos despues de resolver el objeto.
-
-### Ruby (`ruby.rb`)
-Fragmento representativo: `def demo(params) render json: Invoice.find(params[:id]) end`
-En este ejemplo, lo vulnerable es confiar en el identificador que provee el cliente sin ligar el recurso al usuario autenticado o a su contexto. En Ruby, `params` e interpolacion hacen muy facil que la entrada del usuario llegue intacta a una API peligrosa.
-Para encontrar casos parecidos en Ruby, busca consultas por ID y acciones sobre recursos donde el backend no compare ownership ni permisos despues de resolver el objeto.
-
-### Rust (`rust.rs`)
-Fragmento representativo: `fn demo() { let invoice = find_invoice(id); }`
-En este ejemplo, lo vulnerable es confiar en el identificador que provee el cliente sin ligar el recurso al usuario autenticado o a su contexto. En Rust, la seguridad de memoria no evita fallas de logica: deserializar, concatenar o invocar APIs peligrosas con datos no confiables sigue siendo riesgoso.
-Para encontrar casos parecidos en Rust, busca consultas por ID y acciones sobre recursos donde el backend no compare ownership ni permisos despues de resolver el objeto.
-
-### C# (`csharp.cs`)
-Fragmento representativo: `public class Example { public void Demo() { return Json(invoices[int.Parse(Request.Query["id"])]); } }`
-En este ejemplo, lo vulnerable es confiar en el identificador que provee el cliente sin ligar el recurso al usuario autenticado o a su contexto. En C#, interpolacion, concatenacion, model binding o deserializacion no sustituyen validacion, autorizacion ni listas permitidas.
-Para encontrar casos parecidos en C#, busca consultas por ID y acciones sobre recursos donde el backend no compare ownership ni permisos despues de resolver el objeto.
+### 10. Pascal / Free Pascal ([pascal.pas](./pascal.pas))
+```pascal
+{ IDOR }
+program Example;
+begin
+  Response.Content := GetInvoice(Request.QueryFields.Values['id']);
+  end.
+```
+- **Sink peligroso y causa raíz:** Consulta por parámetro de URL sin filtro de sesión.
+- **Mecanismo de explotación y vector:** Acceso a recursos de otros clientes.
+- **Remediación idiomática:** Verificar credenciales de propiedad del registro en la base de datos.

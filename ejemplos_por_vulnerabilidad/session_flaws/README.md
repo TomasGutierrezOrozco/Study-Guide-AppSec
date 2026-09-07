@@ -1,63 +1,130 @@
 # Session Puzzling / Fixation / Variable Overloading
 
-Este README aplica a todos los ejemplos de la carpeta. Aunque la sintaxis cambia entre lenguajes, la causa raiz de la vulnerabilidad es la misma.
+## Descripción General
+Agrupa vulnerabilidades en la gestión del estado de sesión: Session Fixation (el servidor acepta un session ID provisto por el usuario sin renovarlo al autenticarse), Session Puzzling (reutilización de la misma variable de sesión en múltiples contextos distintos) y Variable Overloading (inyectar parámetros de la petición directamente en el almacenamiento de sesión global).
 
-## Que hace vulnerable al patron
-El patron agrupa fallas de sesion donde identificadores o variables se mezclan de forma insegura entre autenticacion y logica de negocio.
-La aplicacion reutiliza sesiones, acepta IDs fijados por el atacante o mezcla atributos de diferentes flujos en el mismo espacio de sesion. Eso facilita secuestro, confusion de identidad o escalamiento.
+## Patrones y Señales para Análisis SAST
+- Asignación manual de session ID: `session_id($_GET["sid"])`.
+- Fusión directa de entradas en la sesión: `$_SESSION += $_REQUEST`.
+- Falta de regeneración de sesión tras login (`session_regenerate_id`).
 
-## Como identificar casos similares
-- Sesiones que no rotan tras login o cambio de privilegios.
-- Variables de sesion ambiguas para multiples propositos.
-- IDs de sesion aceptados desde URL o fuentes no seguras.
+## Estrategia de Mitigación y Buenas Prácticas
+- Regenerar siempre el ID de sesión inmediatamente después de un cambio de nivel de autenticación.
+- Rechazar identificadores de sesión provenientes de parámetros URL o GET.
+- No almacenar masivamente variables de la petición dentro del objeto de sesión.
 
-## Explicacion por lenguaje
-### Python (`python.py`)
-Fragmento representativo: `if 'sid' in request.args: session.sid=request.args['sid'] session.update(request.args)`
-En este ejemplo, lo vulnerable es confiar en una sesion cuyo identificador o estado puede ser preparado, heredado o mezclado indebidamente por un atacante. En Python, usar f-strings, concatenacion, carga directa de objetos o parseo sin restricciones no agrega ninguna proteccion automatica.
-Para encontrar casos parecidos en Python, busca fijacion de sesion, variables de sesion reutilizadas entre flujos y ausencia de regeneracion del identificador.
+## Análisis Técnico y Ejemplos por Lenguaje
 
-### JavaScript (`javascript.js`)
-Fragmento representativo: `function demo(req, res) { req.session.id=req.query.sid;Object.assign(req.session,req.query); }`
-En este ejemplo, lo vulnerable es confiar en una sesion cuyo identificador o estado puede ser preparado, heredado o mezclado indebidamente por un atacante. En JavaScript, los valores que vienen de `req`, `body`, `query` o merges de objetos llegan intactos al sink si no se validan antes.
-Para encontrar casos parecidos en JavaScript, busca fijacion de sesion, variables de sesion reutilizadas entre flujos y ausencia de regeneracion del identificador.
+### 1. Python ([python.py](./python.py))
+```python
+# Session Puzzling / Fixation / Variable Overloading
+if 'sid' in request.args: session.sid=request.args['sid']
+session.update(request.args)
+```
+- **Sink peligroso y causa raíz:** Aceptar `sid` por URL o hacer `session.update(request.form)`.
+- **Mecanismo de explotación y vector:** Fijación de sesión y escalamiento de privilegios sobrescribiendo atributos como `role`.
+- **Remediación idiomática:** Regenerar sesión tras autenticación y asignar variables individualmente.
 
-### Java (`java.java`)
-Fragmento representativo: `public class Example { public void demo() throws Exception { request.getSession(true).setAttribute("role",request.getParameter("role")); } }`
-En este ejemplo, lo vulnerable es confiar en una sesion cuyo identificador o estado puede ser preparado, heredado o mezclado indebidamente por un atacante. En Java, concatenar `String`, deserializar o consumir datos de `request` deja toda la seguridad en la logica de la aplicacion.
-Para encontrar casos parecidos en Java, busca fijacion de sesion, variables de sesion reutilizadas entre flujos y ausencia de regeneracion del identificador.
+### 2. JavaScript / Node.js ([javascript.js](./javascript.js))
+```javascript
+// Session Puzzling / Fixation / Variable Overloading
+function demo(req, res) {
+  req.session.id=req.query.sid;Object.assign(req.session,req.query);
+  }
+```
+- **Sink peligroso y causa raíz:** Modificación de `req.session` fusionando `req.body`.
+- **Mecanismo de explotación y vector:** Secuestro de sesión o escalamiento a roles administrativos.
+- **Remediación idiomática:** Usar `req.session.regenerate()` tras login y tipar los datos de sesión.
 
-### Go (`go.go`)
-Fragmento representativo: `package main func demo() { session.ID=r.URL.Query().Get("sid") }`
-En este ejemplo, lo vulnerable es confiar en una sesion cuyo identificador o estado puede ser preparado, heredado o mezclado indebidamente por un atacante. En Go, tomar valores desde `r.URL.Query()`, `body` o estructuras similares y pasarlos a APIs sensibles no introduce sanitizacion por defecto.
-Para encontrar casos parecidos en Go, busca fijacion de sesion, variables de sesion reutilizadas entre flujos y ausencia de regeneracion del identificador.
+### 3. Java ([java.java](./java.java))
+```java
+// Session Puzzling / Fixation / Variable Overloading
+public class Example {
+  public void demo() throws Exception {
+    request.getSession(true).setAttribute("role",request.getParameter("role"));
+      }
+}
+```
+- **Sink peligroso y causa raíz:** Uso de `request.getSession()` sin invalidar la sesión anterior tras autenticación.
+- **Mecanismo de explotación y vector:** Session Fixation permitiendo secuestro de cuentas.
+- **Remediación idiomática:** Configurar `sessionManagement().sessionFixation().migrateSession()` en Spring Security.
 
-### PHP (`php.php`)
-Fragmento representativo: `if(isset($_GET['sid']))session_id($_GET['sid']);session_start();$_SESSION+=$_REQUEST;`
-En este ejemplo, lo vulnerable es confiar en una sesion cuyo identificador o estado puede ser preparado, heredado o mezclado indebidamente por un atacante. En PHP, usar `$_GET`, `$_POST`, `php://input` o variables equivalentes directamente es un patron clasico de vulnerabilidad.
-Para encontrar casos parecidos en PHP, busca fijacion de sesion, variables de sesion reutilizadas entre flujos y ausencia de regeneracion del identificador.
+### 4. Go ([go.go](./go.go))
+```go
+// Session Puzzling / Fixation / Variable Overloading
+package main
+func demo() {
+  session.ID=r.URL.Query().Get("sid")
+  }
+```
+- **Sink peligroso y causa raíz:** Aceptación de tokens de sesión por query params sin renovación.
+- **Mecanismo de explotación y vector:** Hijacking de sesiones de usuario.
+- **Remediación idiomática:** Regenerar el identificador de sesión y emitir cookies con `HttpOnly` y `Secure`.
 
-### Perl (`perl.pl`)
-Fragmento representativo: `sub demo { session role => param('role'); }`
-En este ejemplo, lo vulnerable es confiar en una sesion cuyo identificador o estado puede ser preparado, heredado o mezclado indebidamente por un atacante. En Perl, las variables interpoladas o concatenadas conservan el control del atacante sobre la operacion final.
-Para encontrar casos parecidos en Perl, busca fijacion de sesion, variables de sesion reutilizadas entre flujos y ausencia de regeneracion del identificador.
+### 5. PHP ([php.php](./php.php))
+```php
+<?php
+// Session Puzzling / Fixation / Variable Overloading
+if(isset($_GET['sid']))session_id($_GET['sid']);session_start();$_SESSION+=$_REQUEST;
+```
+- **Sink peligroso y causa raíz:** `session_id($_GET["sid"]); session_start(); $_SESSION += $_REQUEST;`.
+- **Mecanismo de explotación y vector:** Un atacante fija el ID de sesión de la víctima o se otorga rol de administrador.
+- **Remediación idiomática:** Activar `session.use_strict_mode = 1`, llamar a `session_regenerate_id(true)` y no fusionar arrays.
 
-### Pascal (`pascal.pas`)
-Fragmento representativo: `program Example; begin Session.ID := Request.QueryFields.Values['sid']; end.`
-En este ejemplo, lo vulnerable es confiar en una sesion cuyo identificador o estado puede ser preparado, heredado o mezclado indebidamente por un atacante. En Pascal, concatenar strings o reutilizar datos de `Request` transmite el valor no confiable hasta la operacion sensible.
-Para encontrar casos parecidos en Pascal, busca fijacion de sesion, variables de sesion reutilizadas entre flujos y ausencia de regeneracion del identificador.
+### 6. C# (.NET) ([csharp.cs](./csharp.cs))
+```csharp
+// Session Puzzling / Fixation / Variable Overloading
+public class Example {
+  public void Demo() {
+    HttpContext.Session.SetString("role", Request.Query["role"]);
+      }
+}
+```
+- **Sink peligroso y causa raíz:** Uso de identificadores de sesión estáticos o expuestos en URLs.
+- **Mecanismo de explotación y vector:** Secuestro de sesión.
+- **Remediación idiomática:** Usar los middlewares estándar de autenticación por cookies de ASP.NET Core con renovación automática.
 
-### Ruby (`ruby.rb`)
-Fragmento representativo: `def demo(params) session[:role] = params[:role] end`
-En este ejemplo, lo vulnerable es confiar en una sesion cuyo identificador o estado puede ser preparado, heredado o mezclado indebidamente por un atacante. En Ruby, `params` e interpolacion hacen muy facil que la entrada del usuario llegue intacta a una API peligrosa.
-Para encontrar casos parecidos en Ruby, busca fijacion de sesion, variables de sesion reutilizadas entre flujos y ausencia de regeneracion del identificador.
+### 7. Ruby ([ruby.rb](./ruby.rb))
+```ruby
+# Session Puzzling / Fixation / Variable Overloading
+def demo(params)
+  session[:role] = params[:role]
+  end
+```
+- **Sink peligroso y causa raíz:** Fusión de `params` en el hash `session` sin filtrar.
+- **Mecanismo de explotación y vector:** Manipulación de variables de autorización.
+- **Remediación idiomática:** Usar `reset_session` tras login y asignar valores explícitamente.
 
-### Rust (`rust.rs`)
-Fragmento representativo: `fn demo() { session.id = sid.to_string(); }`
-En este ejemplo, lo vulnerable es confiar en una sesion cuyo identificador o estado puede ser preparado, heredado o mezclado indebidamente por un atacante. En Rust, la seguridad de memoria no evita fallas de logica: deserializar, concatenar o invocar APIs peligrosas con datos no confiables sigue siendo riesgoso.
-Para encontrar casos parecidos en Rust, busca fijacion de sesion, variables de sesion reutilizadas entre flujos y ausencia de regeneracion del identificador.
+### 8. Rust ([rust.rs](./rust.rs))
+```rust
+// Session Puzzling / Fixation / Variable Overloading
+fn demo() {
+  session.id = sid.to_string();
+  }
+```
+- **Sink peligroso y causa raíz:** Gestión de sesión permeable a parámetros de entrada.
+- **Mecanismo de explotación y vector:** Fijación de sesión.
+- **Remediación idiomática:** Regenerar el identificador de sesión al autenticar.
 
-### C# (`csharp.cs`)
-Fragmento representativo: `public class Example { public void Demo() { HttpContext.Session.SetString("role", Request.Query["role"]); } }`
-En este ejemplo, lo vulnerable es confiar en una sesion cuyo identificador o estado puede ser preparado, heredado o mezclado indebidamente por un atacante. En C#, interpolacion, concatenacion, model binding o deserializacion no sustituyen validacion, autorizacion ni listas permitidas.
-Para encontrar casos parecidos en C#, busca fijacion de sesion, variables de sesion reutilizadas entre flujos y ausencia de regeneracion del identificador.
+### 9. Perl ([perl.pl](./perl.pl))
+```perl
+# Session Puzzling / Fixation / Variable Overloading
+sub demo {
+  $session{role} = param('role');
+}
+```
+- **Sink peligroso y causa raíz:** Asignación directa de parámetros a variables de sesión.
+- **Mecanismo de explotación y vector:** Corrupción de estado de sesión.
+- **Remediación idiomática:** Filtrar estrictamente las claves permitidas en sesión.
+
+### 10. Pascal / Free Pascal ([pascal.pas](./pascal.pas))
+```pascal
+{ Session Puzzling / Fixation / Variable Overloading }
+program Example;
+begin
+  Session.ID := Request.QueryFields.Values['sid'];
+  end.
+```
+- **Sink peligroso y causa raíz:** Adopción de identificadores de sesión enviados por el cliente.
+- **Mecanismo de explotación y vector:** Fijación de sesión.
+- **Remediación idiomática:** Generar identificadores criptográficos en el servidor.

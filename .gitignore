@@ -22,3 +22,10 @@ site/
 
 docs/generated/
 *.docx
+
+node_modules/
+*.class
+*.o
+*.out
+.DS_Store
+Thumbs.db

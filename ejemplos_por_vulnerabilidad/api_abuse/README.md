@@ -1,63 +1,130 @@
+# API Abuse y Falta de Rate Limiting
+
+## Descripción General
+Ocurre cuando una API expone recursos o acciones sin límites de consumo, cuotas ni validación de límites numéricos en los parámetros. Un cliente malicioso puede solicitar millones de registros, provocar sobrecarga de memoria, consumo excesivo de CPU o scraping no autorizado.
+
+## Patrones y Señales para Análisis SAST
+- Conversión de parámetros HTTP (`limit`, `count`, `size`) a enteros sin validar cotas máximas.
+- Llamadas a `range()`, `Array(n)`, `SELECT *` o bucles basados en parámetros de entrada.
+- Falta de middlewares o anotaciones de rate limiting (Throttling) en controladores de API.
+
+## Estrategia de Mitigación y Buenas Prácticas
+- Aplicar una cota superior estricta en el servidor (ej. `limit = min(parsed_limit, 100)`).
+- Implementar paginación obligatoria basada en cursores o offsets limitados.
+- Configurar Rate Limiting por IP y por token de usuario (ej. Token Bucket / Leaky Bucket).
+
+## Análisis Técnico y Ejemplos por Lenguaje
+
+### 1. Python ([python.py](./python.py))
+```python
 # API Abuse
+def demo():
+    return {'items': list(range(int(request.args.get('limit', '1000000'))))}
+```
+- **Sink peligroso y causa raíz:** `request.args.get("limit")` pasado a `int()` y `range()` sin cota máxima.
+- **Mecanismo de explotación y vector:** Agotamiento de memoria (OOM) en el worker de Python al crear listas gigantes.
+- **Remediación idiomática:** Establecer cota: `limit = min(int(request.args.get("limit", 50)), 100)` y usar generadores o paginación en BD.
 
-Este README aplica a todos los ejemplos de la carpeta. Aunque la sintaxis cambia entre lenguajes, la causa raiz de la vulnerabilidad es la misma.
+### 2. JavaScript / Node.js ([javascript.js](./javascript.js))
+```javascript
+// API Abuse
+function demo(req, res) {
+  res.json({items:[...Array(Number(req.query.limit||1000000)).keys()]});
+  }
+```
+- **Sink peligroso y causa raíz:** `Number(req.query.limit)` usado en `Array(...)` sin límite.
+- **Mecanismo de explotación y vector:** Bloqueo del event loop de Node.js por asignación masiva en el heap V8.
+- **Remediación idiomática:** Validar con `Math.min(Number(req.query.limit) || 20, 100)` y aplicar middleware `express-rate-limit`.
 
-## Que hace vulnerable al patron
-El patron vulnerable aparece cuando la API expone acciones sensibles sin controles de autorizacion, limites de uso o validaciones de negocio suficientes.
-El backend acepta la operacion tal como llega y asume que el cliente usara el flujo correcto. Eso permite scraping, automatizacion abusiva, fuerza bruta o consumo de acciones de alto impacto fuera de contexto.
+### 3. Java ([java.java](./java.java))
+```java
+// API Abuse
+public class Example {
+  public void demo() throws Exception {
+    int limit=Integer.parseInt(request.getParameter("limit"));
+      }
+}
+```
+- **Sink peligroso y causa raíz:** `Integer.parseInt(request.getParameter("limit"))` consumido directamente.
+- **Mecanismo de explotación y vector:** Consumo excesivo de memoria en JVM y saturación del pool de conexiones.
+- **Remediación idiomática:** Restringir: `int limit = Math.min(Math.max(Integer.parseInt(val), 1), 100);` y paginar consultas JPA/JDBC.
 
-## Como identificar casos similares
-- Endpoints potentes sin rate limiting, cuotas ni alertas.
-- Acciones criticas protegidas solo por la UI o por conocer la ruta.
-- Reglas de negocio aplicadas en frontend y no en servidor.
+### 4. Go ([go.go](./go.go))
+```go
+// API Abuse
+package main
+func demo() {
+  limit,_:=strconv.Atoi(r.URL.Query().Get("limit"))
+  }
+```
+- **Sink peligroso y causa raíz:** `strconv.Atoi(r.URL.Query().Get("limit"))` sin acotación.
+- **Mecanismo de explotación y vector:** Alojamientos masivos de slices y presión excesiva sobre el Garbage Collector.
+- **Remediación idiomática:** Acotar el entero: `if limit <= 0 || limit > 100 { limit = 50 }` y limitar tamaño con `io.LimitReader`.
 
-## Explicacion por lenguaje
-### Python (`python.py`)
-Fragmento representativo: `return {'items':list(range(int(request.args.get('limit','1000000'))))}`
-En este ejemplo, lo vulnerable es que el ejemplo deja que el cliente controle una accion o un flujo que deberia estar restringido por autorizacion, cuota o contexto de negocio. En Python, usar f-strings, concatenacion, carga directa de objetos o parseo sin restricciones no agrega ninguna proteccion automatica.
-Para encontrar casos parecidos en Python, busca endpoints que acepten la operacion completa desde el cliente y no verifiquen permisos, frecuencia ni reglas de negocio en el servidor.
+### 5. PHP ([php.php](./php.php))
+```php
+<?php
+// API Abuse
+echo json_encode(range(1,intval($_GET['limit']??1000000)));
+```
+- **Sink peligroso y causa raíz:** `intval($_GET["limit"])` pasado a `range()`.
+- **Mecanismo de explotación y vector:** Superación del `memory_limit` de PHP produciendo error fatal 500.
+- **Remediación idiomática:** Aplicar cota estricta: `$limit = min(max(1, (int)($_GET["limit"] ?? 20)), 100);`.
 
-### JavaScript (`javascript.js`)
-Fragmento representativo: `function demo(req, res) { res.json({items:[...Array(Number(req.query.limit||1000000)).keys()]}); }`
-En este ejemplo, lo vulnerable es que el ejemplo deja que el cliente controle una accion o un flujo que deberia estar restringido por autorizacion, cuota o contexto de negocio. En JavaScript, los valores que vienen de `req`, `body`, `query` o merges de objetos llegan intactos al sink si no se validan antes.
-Para encontrar casos parecidos en JavaScript, busca endpoints que acepten la operacion completa desde el cliente y no verifiquen permisos, frecuencia ni reglas de negocio en el servidor.
+### 6. C# (.NET) ([csharp.cs](./csharp.cs))
+```csharp
+// API Abuse
+public class Example {
+  public void Demo() {
+    var limit = int.Parse(Request.Query["limit"] ?? "1000000");
+      }
+}
+```
+- **Sink peligroso y causa raíz:** `int.Parse(Request.Query["limit"])` sin validación.
+- **Mecanismo de explotación y vector:** Saturación del heap en CLR y sobrecarga en Entity Framework.
+- **Remediación idiomática:** Acotar: `int limit = Math.Clamp(parsedLimit, 1, 100);` y usar `Take(limit)`.
 
-### Java (`java.java`)
-Fragmento representativo: `public class Example { public void demo() throws Exception { int limit=Integer.parseInt(request.getParameter("limit")); } }`
-En este ejemplo, lo vulnerable es que el ejemplo deja que el cliente controle una accion o un flujo que deberia estar restringido por autorizacion, cuota o contexto de negocio. En Java, concatenar `String`, deserializar o consumir datos de `request` deja toda la seguridad en la logica de la aplicacion.
-Para encontrar casos parecidos en Java, busca endpoints que acepten la operacion completa desde el cliente y no verifiquen permisos, frecuencia ni reglas de negocio en el servidor.
+### 7. Ruby ([ruby.rb](./ruby.rb))
+```ruby
+# API Abuse
+def demo(params)
+  render json: (1..params.fetch(:limit, 1_000_000).to_i).to_a
+  end
+```
+- **Sink peligroso y causa raíz:** `params[:limit].to_i` pasado a colecciones.
+- **Mecanismo de explotación y vector:** Creación masiva de objetos en Ruby VM generando degradación de rendimiento.
+- **Remediación idiomática:** Limitar: `limit = [[params[:limit].to_i, 1].max, 100].min`.
 
-### Go (`go.go`)
-Fragmento representativo: `package main func demo() { limit,_:=strconv.Atoi(r.URL.Query().Get("limit")) }`
-En este ejemplo, lo vulnerable es que el ejemplo deja que el cliente controle una accion o un flujo que deberia estar restringido por autorizacion, cuota o contexto de negocio. En Go, tomar valores desde `r.URL.Query()`, `body` o estructuras similares y pasarlos a APIs sensibles no introduce sanitizacion por defecto.
-Para encontrar casos parecidos en Go, busca endpoints que acepten la operacion completa desde el cliente y no verifiquen permisos, frecuencia ni reglas de negocio en el servidor.
+### 8. Rust ([rust.rs](./rust.rs))
+```rust
+// API Abuse
+fn demo() {
+  let limit: usize = limit.parse().unwrap_or(1_000_000);
+  }
+```
+- **Sink peligroso y causa raíz:** Conversión de entrada a tamaño de iteradores o vectores.
+- **Mecanismo de explotación y vector:** Aunque Rust maneja memoria de forma segura, allocations gigantes pueden causar OOM.
+- **Remediación idiomática:** Validar: `let limit = limit_param.parse::<usize>().unwrap_or(20).clamp(1, 100);`.
 
-### PHP (`php.php`)
-Fragmento representativo: `echo json_encode(range(1,intval($_GET['limit']??1000000)));`
-En este ejemplo, lo vulnerable es que el ejemplo deja que el cliente controle una accion o un flujo que deberia estar restringido por autorizacion, cuota o contexto de negocio. En PHP, usar `$_GET`, `$_POST`, `php://input` o variables equivalentes directamente es un patron clasico de vulnerabilidad.
-Para encontrar casos parecidos en PHP, busca endpoints que acepten la operacion completa desde el cliente y no verifiquen permisos, frecuencia ni reglas de negocio en el servidor.
+### 9. Perl ([perl.pl](./perl.pl))
+```perl
+# API Abuse
+sub demo {
+  @items = (1..(param('limit') || 1000000));
+  }
+```
+- **Sink peligroso y causa raíz:** `param("limit")` usado en rangos `1..$limit`.
+- **Mecanismo de explotación y vector:** Agotamiento de memoria en el proceso de Perl.
+- **Remediación idiomática:** Acotar: `$limit = $limit > 100 ? 100 : ($limit < 1 ? 20 : $limit);`.
 
-### Perl (`perl.pl`)
-Fragmento representativo: `sub demo { @items = (1..(param('limit') || 1000000)); }`
-En este ejemplo, lo vulnerable es que el ejemplo deja que el cliente controle una accion o un flujo que deberia estar restringido por autorizacion, cuota o contexto de negocio. En Perl, las variables interpoladas o concatenadas conservan el control del atacante sobre la operacion final.
-Para encontrar casos parecidos en Perl, busca endpoints que acepten la operacion completa desde el cliente y no verifiquen permisos, frecuencia ni reglas de negocio en el servidor.
-
-### Pascal (`pascal.pas`)
-Fragmento representativo: `program Example; begin Limit := StrToIntDef(Request.QueryFields.Values['limit'], 1000000); end.`
-En este ejemplo, lo vulnerable es que el ejemplo deja que el cliente controle una accion o un flujo que deberia estar restringido por autorizacion, cuota o contexto de negocio. En Pascal, concatenar strings o reutilizar datos de `Request` transmite el valor no confiable hasta la operacion sensible.
-Para encontrar casos parecidos en Pascal, busca endpoints que acepten la operacion completa desde el cliente y no verifiquen permisos, frecuencia ni reglas de negocio en el servidor.
-
-### Ruby (`ruby.rb`)
-Fragmento representativo: `def demo(params) render json: (1..params.fetch(:limit, 1_000_000).to_i).to_a end`
-En este ejemplo, lo vulnerable es que el ejemplo deja que el cliente controle una accion o un flujo que deberia estar restringido por autorizacion, cuota o contexto de negocio. En Ruby, `params` e interpolacion hacen muy facil que la entrada del usuario llegue intacta a una API peligrosa.
-Para encontrar casos parecidos en Ruby, busca endpoints que acepten la operacion completa desde el cliente y no verifiquen permisos, frecuencia ni reglas de negocio en el servidor.
-
-### Rust (`rust.rs`)
-Fragmento representativo: `fn demo() { let limit: usize = limit.parse().unwrap_or(1_000_000); }`
-En este ejemplo, lo vulnerable es que el ejemplo deja que el cliente controle una accion o un flujo que deberia estar restringido por autorizacion, cuota o contexto de negocio. En Rust, la seguridad de memoria no evita fallas de logica: deserializar, concatenar o invocar APIs peligrosas con datos no confiables sigue siendo riesgoso.
-Para encontrar casos parecidos en Rust, busca endpoints que acepten la operacion completa desde el cliente y no verifiquen permisos, frecuencia ni reglas de negocio en el servidor.
-
-### C# (`csharp.cs`)
-Fragmento representativo: `public class Example { public void Demo() { var limit = int.Parse(Request.Query["limit"] ?? "1000000"); } }`
-En este ejemplo, lo vulnerable es que el ejemplo deja que el cliente controle una accion o un flujo que deberia estar restringido por autorizacion, cuota o contexto de negocio. En C#, interpolacion, concatenacion, model binding o deserializacion no sustituyen validacion, autorizacion ni listas permitidas.
-Para encontrar casos parecidos en C#, busca endpoints que acepten la operacion completa desde el cliente y no verifiquen permisos, frecuencia ni reglas de negocio en el servidor.
+### 10. Pascal / Free Pascal ([pascal.pas](./pascal.pas))
+```pascal
+{ API Abuse }
+program Example;
+begin
+  Limit := StrToIntDef(Request.QueryFields.Values['limit'], 1000000);
+  end.
+```
+- **Sink peligroso y causa raíz:** Asignación directa de límites sin verificación de rango.
+- **Mecanismo de explotación y vector:** Desbordamiento o consumo masivo de memoria dinámica.
+- **Remediación idiomática:** Validar límites con sentencias condicionales estrictas (`if Limit > 100 then Limit := 100;`).

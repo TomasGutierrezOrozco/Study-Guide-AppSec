@@ -1,63 +1,129 @@
 # Cross-Site Request Forgery (CSRF)
 
-Este README aplica a todos los ejemplos de la carpeta. Aunque la sintaxis cambia entre lenguajes, la causa raiz de la vulnerabilidad es la misma.
+## Descripción General
+Ocurre cuando una aplicación web permite que peticiones secundarias disparadas desde un sitio externo ejecuten acciones sensibles en nombre de un usuario autenticado. El navegador adjunta automáticamente las cookies de sesión a la solicitud cross-site, y el backend procesa la acción sin validar la intención real del usuario.
 
-## Que hace vulnerable al patron
-La vulnerabilidad ocurre cuando una accion autenticada puede ejecutarse con la sesion de la victima sin una prueba adicional de intencion.
-El servidor acepta la cookie de sesion y procesa cambios de estado sin token anti-CSRF, sin validar `Origin`/`Referer` o usando metodos inseguros para operaciones criticas.
+## Patrones y Señales para Análisis SAST
+- Endpoints que mutan estado (`POST`, `PUT`, `DELETE`) sin solicitar ni verificar tokens anti-CSRF.
+- Cookies de sesión configuradas sin atributo `SameSite` o con `SameSite=None`.
+- Ausencia de validación de encabezados `Origin` o `Referer` en peticiones de cambio de estado.
 
-## Como identificar casos similares
-- Endpoints que cambian estado sin token anti-CSRF.
-- Dependencia exclusiva de la cookie de sesion.
-- Formularios o APIs para navegador sin validacion de origen.
+## Estrategia de Mitigación y Buenas Prácticas
+- Implementar tokens anti-CSRF únicos por sesión o por formulario (patrón Synchronizer Token o Double Submit Cookie).
+- Configurar cookies con `SameSite=Lax` o `SameSite=Strict`.
+- Verificar que el encabezado `Origin` coincida exactamente con el dominio de la aplicación en todas las mutaciones.
 
-## Explicacion por lenguaje
-### Python (`python.py`)
-Fragmento representativo: `if request.method=='POST': change_email(request.form['email'])`
-En este ejemplo, lo vulnerable es que la accion se autoriza solo porque la cookie de sesion acompana la peticion, no porque exista una prueba de intencion del usuario legitimo. En Python, usar f-strings, concatenacion, carga directa de objetos o parseo sin restricciones no agrega ninguna proteccion automatica.
-Para encontrar casos parecidos en Python, busca endpoints de mutacion que acepten la sesion automaticamente y no exijan token, validacion de origen ni otra prueba anti-CSRF.
+## Análisis Técnico y Ejemplos por Lenguaje
 
-### JavaScript (`javascript.js`)
-Fragmento representativo: `function demo(req, res) { app.post('/email',(req,res)=>changeEmail(req.body.email)); }`
-En este ejemplo, lo vulnerable es que la accion se autoriza solo porque la cookie de sesion acompana la peticion, no porque exista una prueba de intencion del usuario legitimo. En JavaScript, los valores que vienen de `req`, `body`, `query` o merges de objetos llegan intactos al sink si no se validan antes.
-Para encontrar casos parecidos en JavaScript, busca endpoints de mutacion que acepten la sesion automaticamente y no exijan token, validacion de origen ni otra prueba anti-CSRF.
+### 1. Python ([python.py](./python.py))
+```python
+# Cross-Site Request Forgery (CSRF)
+if request.method=='POST': change_email(request.form['email'])
+```
+- **Sink peligroso y causa raíz:** Procesamiento de POST autenticado solo por `session["user_id"]`.
+- **Mecanismo de explotación y vector:** Cambio de correo, contraseña o compras no autorizadas inducidas por un enlace malicioso.
+- **Remediación idiomática:** Usar `Flask-WTF` con `CSRFProtect(app)` y validar tokens en cada formulario y API.
 
-### Java (`java.java`)
-Fragmento representativo: `public class Example { public void demo() throws Exception { if(request.getMethod().equals("POST")){changeEmail(request.getParameter("email"));} } }`
-En este ejemplo, lo vulnerable es que la accion se autoriza solo porque la cookie de sesion acompana la peticion, no porque exista una prueba de intencion del usuario legitimo. En Java, concatenar `String`, deserializar o consumir datos de `request` deja toda la seguridad en la logica de la aplicacion.
-Para encontrar casos parecidos en Java, busca endpoints de mutacion que acepten la sesion automaticamente y no exijan token, validacion de origen ni otra prueba anti-CSRF.
+### 2. JavaScript / Node.js ([javascript.js](./javascript.js))
+```javascript
+// Cross-Site Request Forgery (CSRF)
+function demo(req, res) {
+  app.post('/email',(req,res)=>changeEmail(req.body.email));
+  }
+```
+- **Sink peligroso y causa raíz:** Rutas `app.post()` en Express sin middleware de protección CSRF.
+- **Mecanismo de explotación y vector:** Ejecución de acciones privilegiadas cuando el usuario visita un sitio externo.
+- **Remediación idiomática:** Usar `csurf` o implementar validación estricta de encabezados `Origin` y tokens en cabeceras `X-CSRF-Token`.
 
-### Go (`go.go`)
-Fragmento representativo: `package main func demo() { if r.Method==http.MethodPost { changeEmail(r.FormValue("email")) } }`
-En este ejemplo, lo vulnerable es que la accion se autoriza solo porque la cookie de sesion acompana la peticion, no porque exista una prueba de intencion del usuario legitimo. En Go, tomar valores desde `r.URL.Query()`, `body` o estructuras similares y pasarlos a APIs sensibles no introduce sanitizacion por defecto.
-Para encontrar casos parecidos en Go, busca endpoints de mutacion que acepten la sesion automaticamente y no exijan token, validacion de origen ni otra prueba anti-CSRF.
+### 3. Java ([java.java](./java.java))
+```java
+// Cross-Site Request Forgery (CSRF)
+public class Example {
+  public void demo() throws Exception {
+    if(request.getMethod().equals("POST")){changeEmail(request.getParameter("email"));}
+      }
+}
+```
+- **Sink peligroso y causa raíz:** Deshabilitación explícita de CSRF en Spring Security (`csrf().disable()`).
+- **Mecanismo de explotación y vector:** Vulnerabilidad ante formularios HTML ocultos que envían POST automático.
+- **Remediación idiomática:** Mantener activado el filtro CSRF por defecto en Spring Security y enviar `_csrf` en formularios/cabeceras.
 
-### PHP (`php.php`)
-Fragmento representativo: `if($_SERVER['REQUEST_METHOD']==='POST'){changeEmail($_POST['email']);}`
-En este ejemplo, lo vulnerable es que la accion se autoriza solo porque la cookie de sesion acompana la peticion, no porque exista una prueba de intencion del usuario legitimo. En PHP, usar `$_GET`, `$_POST`, `php://input` o variables equivalentes directamente es un patron clasico de vulnerabilidad.
-Para encontrar casos parecidos en PHP, busca endpoints de mutacion que acepten la sesion automaticamente y no exijan token, validacion de origen ni otra prueba anti-CSRF.
+### 4. Go ([go.go](./go.go))
+```go
+// Cross-Site Request Forgery (CSRF)
+package main
+func demo() {
+  if r.Method==http.MethodPost { changeEmail(r.FormValue("email")) }
+  }
+```
+- **Sink peligroso y causa raíz:** Handlers HTTP que leen formularios y modifican datos sin token de verificación.
+- **Mecanismo de explotación y vector:** Mutación de datos del usuario mediante peticiones cross-origin.
+- **Remediación idiomática:** Integrar middleware como `gorilla/csrf` que inyecta y valida tokens criptográficos.
 
-### Perl (`perl.pl`)
-Fragmento representativo: `sub demo { change_email(param('email')) if request_method() eq 'POST'; }`
-En este ejemplo, lo vulnerable es que la accion se autoriza solo porque la cookie de sesion acompana la peticion, no porque exista una prueba de intencion del usuario legitimo. En Perl, las variables interpoladas o concatenadas conservan el control del atacante sobre la operacion final.
-Para encontrar casos parecidos en Perl, busca endpoints de mutacion que acepten la sesion automaticamente y no exijan token, validacion de origen ni otra prueba anti-CSRF.
+### 5. PHP ([php.php](./php.php))
+```php
+<?php
+// Cross-Site Request Forgery (CSRF)
+if($_SERVER['REQUEST_METHOD']==='POST'){changeEmail($_POST['email']);}
+```
+- **Sink peligroso y causa raíz:** Scripts que procesan `$_POST` confiando únicamente en `session_start()`.
+- **Mecanismo de explotación y vector:** Ataques de cambio de credenciales mediante payloads `<form action=...><script>submit()`.
+- **Remediación idiomática:** Generar `$_SESSION["csrf_token"] = bin2hex(random_bytes(32))` y validar con `hash_equals()`.
 
-### Pascal (`pascal.pas`)
-Fragmento representativo: `program Example; begin if Request.Method = 'POST' then ChangeEmail(Request.ContentFields.Values['email']); end.`
-En este ejemplo, lo vulnerable es que la accion se autoriza solo porque la cookie de sesion acompana la peticion, no porque exista una prueba de intencion del usuario legitimo. En Pascal, concatenar strings o reutilizar datos de `Request` transmite el valor no confiable hasta la operacion sensible.
-Para encontrar casos parecidos en Pascal, busca endpoints de mutacion que acepten la sesion automaticamente y no exijan token, validacion de origen ni otra prueba anti-CSRF.
+### 6. C# (.NET) ([csharp.cs](./csharp.cs))
+```csharp
+// Cross-Site Request Forgery (CSRF)
+public class Example {
+  public void Demo() {
+    if (Request.Method == "POST") ChangeEmail(Request.Form["email"]);
+      }
+}
+```
+- **Sink peligroso y causa raíz:** Acciones en ASP.NET Core MVC sin el atributo `[ValidateAntiForgeryToken]`.
+- **Mecanismo de explotación y vector:** Ejecución forzada de peticiones sensibles.
+- **Remediación idiomática:** Aplicar `[ValidateAntiForgeryToken]` en controladores o activar el filtro global de auto-validación.
 
-### Ruby (`ruby.rb`)
-Fragmento representativo: `def demo(params) change_email(params[:email]) end`
-En este ejemplo, lo vulnerable es que la accion se autoriza solo porque la cookie de sesion acompana la peticion, no porque exista una prueba de intencion del usuario legitimo. En Ruby, `params` e interpolacion hacen muy facil que la entrada del usuario llegue intacta a una API peligrosa.
-Para encontrar casos parecidos en Ruby, busca endpoints de mutacion que acepten la sesion automaticamente y no exijan token, validacion de origen ni otra prueba anti-CSRF.
+### 7. Ruby ([ruby.rb](./ruby.rb))
+```ruby
+# Cross-Site Request Forgery (CSRF)
+def demo(params)
+  change_email(params[:email])
+  end
+```
+- **Sink peligroso y causa raíz:** Uso de `skip_before_action :verify_authenticity_token` en Rails.
+- **Mecanismo de explotación y vector:** Bypass deliberado de la protección nativa de Rails permitiendo ataques CSRF.
+- **Remediación idiomática:** Mantener `protect_from_forgery with: :exception` activo en todos los controladores sensibles.
 
-### Rust (`rust.rs`)
-Fragmento representativo: `fn demo() { change_email(email); }`
-En este ejemplo, lo vulnerable es que la accion se autoriza solo porque la cookie de sesion acompana la peticion, no porque exista una prueba de intencion del usuario legitimo. En Rust, la seguridad de memoria no evita fallas de logica: deserializar, concatenar o invocar APIs peligrosas con datos no confiables sigue siendo riesgoso.
-Para encontrar casos parecidos en Rust, busca endpoints de mutacion que acepten la sesion automaticamente y no exijan token, validacion de origen ni otra prueba anti-CSRF.
+### 8. Rust ([rust.rs](./rust.rs))
+```rust
+// Cross-Site Request Forgery (CSRF)
+fn demo() {
+  change_email(email);
+  }
+```
+- **Sink peligroso y causa raíz:** Endpoints mutables en Axum/Actix sin verificación de cabeceras de origen o tokens.
+- **Mecanismo de explotación y vector:** Ejecución de acciones cross-site.
+- **Remediación idiomática:** Validar tokens anti-CSRF en el estado de la sesión y aplicar `SameSite::Strict` en cookies.
 
-### C# (`csharp.cs`)
-Fragmento representativo: `public class Example { public void Demo() { if (Request.Method == "POST") ChangeEmail(Request.Form["email"]); } }`
-En este ejemplo, lo vulnerable es que la accion se autoriza solo porque la cookie de sesion acompana la peticion, no porque exista una prueba de intencion del usuario legitimo. En C#, interpolacion, concatenacion, model binding o deserializacion no sustituyen validacion, autorizacion ni listas permitidas.
-Para encontrar casos parecidos en C#, busca endpoints de mutacion que acepten la sesion automaticamente y no exijan token, validacion de origen ni otra prueba anti-CSRF.
+### 9. Perl ([perl.pl](./perl.pl))
+```perl
+# Cross-Site Request Forgery (CSRF)
+sub demo {
+  change_email(param('email')) if request_method() eq 'POST';
+  }
+```
+- **Sink peligroso y causa raíz:** Acciones sensibles ejecutadas al recibir parámetros POST sin token.
+- **Mecanismo de explotación y vector:** Pérdida de control de la cuenta del usuario.
+- **Remediación idiomática:** Implementar verificación de tokens de sesión aleatorios y validar cabecera `Origin`.
+
+### 10. Pascal / Free Pascal ([pascal.pas](./pascal.pas))
+```pascal
+{ Cross-Site Request Forgery (CSRF) }
+program Example;
+begin
+  if Request.Method = 'POST' then ChangeEmail(Request.ContentFields.Values['email']);
+  end.
+```
+- **Sink peligroso y causa raíz:** Recepción de peticiones de modificación sin comprobación de origen.
+- **Mecanismo de explotación y vector:** Ejecución no deseada de operaciones críticas.
+- **Remediación idiomática:** Añadir validación de token sincronizador en cada solicitud de mutación.

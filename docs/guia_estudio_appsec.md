@@ -1285,5 +1285,7 @@ Tu ventaja en una entrevista AppSec no viene de memorizar payloads, sino de dete
 ## Recursos complementarios del proyecto
 
 - Ejercicios SAST resueltos: `ejercicios_sast/soluciones/ejercicios_resueltos.md`
-- Snippets por lenguaje: `ejercicios_sast/snippets/`
-- Laboratorios Docker: `ejercicios_docker/`
+- Snippets SAST por lenguaje: `ejercicios_sast/snippets/`
+- Laboratorios Docker descriptivos: `ejercicios_docker/`
+- Ejercicios numerados para simulacro con Burp Suite: `ejercicios_numerados/` (soluciones en `ejercicios_numerados/soluciones.md`)
+- Catálogo de 36 vulnerabilidades en 10 lenguajes: `ejemplos_por_vulnerabilidad/`

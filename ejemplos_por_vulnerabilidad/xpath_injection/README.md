@@ -1,63 +1,128 @@
 # XPath Injection
 
-Este README aplica a todos los ejemplos de la carpeta. Aunque la sintaxis cambia entre lenguajes, la causa raiz de la vulnerabilidad es la misma.
+## Descripción General
+Similar a SQL Injection, ocurre cuando una aplicación construye consultas XPath concatenando entradas del usuario sin sanitizar para buscar nodos en documentos XML. Permite eludir autenticaciones mediante payloads como `' or '1'='1` o extraer la estructura completa del documento XML.
 
-## Que hace vulnerable al patron
-La vulnerabilidad aparece cuando el codigo construye expresiones XPath con concatenacion de entrada no confiable.
-Igual que en SQL, el dato del usuario pasa a formar parte de la consulta. Eso permite alterar predicados, navegar nodos no previstos o saltar comprobaciones logicas.
+## Patrones y Señales para Análisis SAST
+- Concatenación de variables en expresiones XPath (`//user[name='" + input + "']`).
+- Ausencia de variables parametrizadas en compiladores XPath.
 
-## Como identificar casos similares
-- Construccion manual de expresiones XPath con variables del request.
-- Consultas XML para login, busqueda o filtrado sin escape.
-- Uso de comillas, operadores o funciones XPath provenientes del usuario.
+## Estrategia de Mitigación y Buenas Prácticas
+- Utilizar consultas XPath parametrizadas mediante `XPathVariableResolver` en Java o APIs equivalentes.
+- Validar y restringir los caracteres de entrada (permitiendo solo alfanuméricos en búsquedas simples).
+- Migrar a bases de datos relacionales o estructuradas para autenticación en lugar de XML.
 
-## Explicacion por lenguaje
-### Python (`python.py`)
-Fragmento representativo: `expr=f"//user[name='{request.args['user']}']"`
-En este ejemplo, lo vulnerable es permitir que el atacante altere la estructura de la expresion XPath, no solo el valor consultado. En Python, usar f-strings, concatenacion, carga directa de objetos o parseo sin restricciones no agrega ninguna proteccion automatica.
-Para encontrar casos parecidos en Python, busca concatenacion de strings para construir expresiones XPath antes de evaluarlas.
+## Análisis Técnico y Ejemplos por Lenguaje
 
-### JavaScript (`javascript.js`)
-Fragmento representativo: `function demo(req, res) { const expr=`//user[name='${req.query.user}']`; }`
-En este ejemplo, lo vulnerable es permitir que el atacante altere la estructura de la expresion XPath, no solo el valor consultado. En JavaScript, los valores que vienen de `req`, `body`, `query` o merges de objetos llegan intactos al sink si no se validan antes.
-Para encontrar casos parecidos en JavaScript, busca concatenacion de strings para construir expresiones XPath antes de evaluarlas.
+### 1. Python ([python.py](./python.py))
+```python
+# XPath Injection
+expr=f"//user[name='{request.args['user']}']"
+```
+- **Sink peligroso y causa raíz:** `expr = f"//user[name='{request.args['user']}']"` evaluado en `lxml.etree`.
+- **Mecanismo de explotación y vector:** Bypass de login inyectando `' or '1'='1`.
+- **Remediación idiomática:** Usar variables de XPath: `root.xpath("//user[name=$u]", u=user_input)`.
 
-### Java (`java.java`)
-Fragmento representativo: `public class Example { public void demo() throws Exception { String expr="//user[name='"+request.getParameter("user")+"']"; } }`
-En este ejemplo, lo vulnerable es permitir que el atacante altere la estructura de la expresion XPath, no solo el valor consultado. En Java, concatenar `String`, deserializar o consumir datos de `request` deja toda la seguridad en la logica de la aplicacion.
-Para encontrar casos parecidos en Java, busca concatenacion de strings para construir expresiones XPath antes de evaluarlas.
+### 2. JavaScript / Node.js ([javascript.js](./javascript.js))
+```javascript
+// XPath Injection
+function demo(req, res) {
+  const expr=`//user[name='${req.query.user}']`;
+  }
+```
+- **Sink peligroso y causa raíz:** Construcción de expresiones XPath mediante strings en librerías XML.
+- **Mecanismo de explotación y vector:** Acceso a nodos protegidos del XML.
+- **Remediación idiomática:** Sanitizar comillas simples y dobles o validar estrictamente el formato de entrada.
 
-### Go (`go.go`)
-Fragmento representativo: `package main func demo() { }`
-En este ejemplo, lo vulnerable es permitir que el atacante altere la estructura de la expresion XPath, no solo el valor consultado. En Go, tomar valores desde `r.URL.Query()`, `body` o estructuras similares y pasarlos a APIs sensibles no introduce sanitizacion por defecto.
-Para encontrar casos parecidos en Go, busca concatenacion de strings para construir expresiones XPath antes de evaluarlas.
+### 3. Java ([java.java](./java.java))
+```java
+// XPath Injection
+public class Example {
+  public void demo() throws Exception {
+    String expr="//user[name='"+request.getParameter("user")+"']";
+      }
+}
+```
+- **Sink peligroso y causa raíz:** `xpath.evaluate("//user[name='" + user + "']", xmlDoc)`.
+- **Mecanismo de explotación y vector:** Extracción de credenciales contenidas en el árbol XML.
+- **Remediación idiomática:** Usar `XPathVariableResolver` para inyectar variables de forma parametrizada.
 
-### PHP (`php.php`)
-Fragmento representativo: `$expr="//user[name='".$_GET['user']."']";`
-En este ejemplo, lo vulnerable es permitir que el atacante altere la estructura de la expresion XPath, no solo el valor consultado. En PHP, usar `$_GET`, `$_POST`, `php://input` o variables equivalentes directamente es un patron clasico de vulnerabilidad.
-Para encontrar casos parecidos en PHP, busca concatenacion de strings para construir expresiones XPath antes de evaluarlas.
+### 4. Go ([go.go](./go.go))
+```go
+// XPath Injection
+package main
+func demo() {
+  // XPath en Go suele venir de librerias externas; concatenar input en la expresion es el fallo.
+  }
+```
+- **Sink peligroso y causa raíz:** Concatenación de parámetros en librerías XPath de Go.
+- **Mecanismo de explotación y vector:** Manipulación de la consulta XPath.
+- **Remediación idiomática:** Escapar comillas o validar con regex alfanumérica.
 
-### Perl (`perl.pl`)
-Fragmento representativo: `sub demo { $expr = "//user[name='" . param('user') . "']"; }`
-En este ejemplo, lo vulnerable es permitir que el atacante altere la estructura de la expresion XPath, no solo el valor consultado. En Perl, las variables interpoladas o concatenadas conservan el control del atacante sobre la operacion final.
-Para encontrar casos parecidos en Perl, busca concatenacion de strings para construir expresiones XPath antes de evaluarlas.
+### 5. PHP ([php.php](./php.php))
+```php
+<?php
+// XPath Injection
+$expr="//user[name='".$_GET['user']."']";
+```
+- **Sink peligroso y causa raíz:** `$expr = "//user[name='" . $_GET["user"] . "']"; $xpath->query($expr)`.
+- **Mecanismo de explotación y vector:** Bypass de comprobaciones de autenticación basadas en XML.
+- **Remediación idiomática:** Sanitizar comillas o usar parámetros predefinidos.
 
-### Pascal (`pascal.pas`)
-Fragmento representativo: `program Example; begin Expr := '//user[name=''' + Request.QueryFields.Values['user'] + ''']'; end.`
-En este ejemplo, lo vulnerable es permitir que el atacante altere la estructura de la expresion XPath, no solo el valor consultado. En Pascal, concatenar strings o reutilizar datos de `Request` transmite el valor no confiable hasta la operacion sensible.
-Para encontrar casos parecidos en Pascal, busca concatenacion de strings para construir expresiones XPath antes de evaluarlas.
+### 6. C# (.NET) ([csharp.cs](./csharp.cs))
+```csharp
+// XPath Injection
+public class Example {
+  public void Demo() {
+    var expr = "//user[name='" + Request.Query["user"] + "']";
+      }
+}
+```
+- **Sink peligroso y causa raíz:** `xmlDoc.SelectSingleNode("//user[name='" + user + "']")`.
+- **Mecanismo de explotación y vector:** Bypass de autenticación en esquemas XML.
+- **Remediación idiomática:** Usar `XsltContext` con resolución de variables parametrizadas.
 
-### Ruby (`ruby.rb`)
-Fragmento representativo: `def demo(params) xpath = "//user[name='#{params[:user]}']" end`
-En este ejemplo, lo vulnerable es permitir que el atacante altere la estructura de la expresion XPath, no solo el valor consultado. En Ruby, `params` e interpolacion hacen muy facil que la entrada del usuario llegue intacta a una API peligrosa.
-Para encontrar casos parecidos en Ruby, busca concatenacion de strings para construir expresiones XPath antes de evaluarlas.
+### 7. Ruby ([ruby.rb](./ruby.rb))
+```ruby
+# XPath Injection
+def demo(params)
+  xpath = "//user[name='#{params[:user]}']"
+  end
+```
+- **Sink peligroso y causa raíz:** `doc.xpath("//user[name='#{params[:user]}']")` en Nokogiri.
+- **Mecanismo de explotación y vector:** Extracción de nodos confidenciales.
+- **Remediación idiomática:** Usar consultas con variables: `doc.xpath("//user[name=$u]", nil, u: user_input)`.
 
-### Rust (`rust.rs`)
-Fragmento representativo: `fn demo() { let expr = format!("//user[name='{}']", user); }`
-En este ejemplo, lo vulnerable es permitir que el atacante altere la estructura de la expresion XPath, no solo el valor consultado. En Rust, la seguridad de memoria no evita fallas de logica: deserializar, concatenar o invocar APIs peligrosas con datos no confiables sigue siendo riesgoso.
-Para encontrar casos parecidos en Rust, busca concatenacion de strings para construir expresiones XPath antes de evaluarlas.
+### 8. Rust ([rust.rs](./rust.rs))
+```rust
+// XPath Injection
+fn demo() {
+  let expr = format!("//user[name='{}']", user);
+  }
+```
+- **Sink peligroso y causa raíz:** Construcción de queries XPath con format strings.
+- **Mecanismo de explotación y vector:** Alteración del resultado de búsqueda XML.
+- **Remediación idiomática:** Sanitizar la entrada o usar parsers seguros.
 
-### C# (`csharp.cs`)
-Fragmento representativo: `public class Example { public void Demo() { var expr = "//user[name='" + Request.Query["user"] + "']"; } }`
-En este ejemplo, lo vulnerable es permitir que el atacante altere la estructura de la expresion XPath, no solo el valor consultado. En C#, interpolacion, concatenacion, model binding o deserializacion no sustituyen validacion, autorizacion ni listas permitidas.
-Para encontrar casos parecidos en C#, busca concatenacion de strings para construir expresiones XPath antes de evaluarlas.
+### 9. Perl ([perl.pl](./perl.pl))
+```perl
+# XPath Injection
+sub demo {
+  $expr = "//user[name='" . param('user') . "']";
+  }
+```
+- **Sink peligroso y causa raíz:** Interpolación de variables en `XML::XPath`.
+- **Mecanismo de explotación y vector:** Extracción no autorizada de datos XML.
+- **Remediación idiomática:** Validar la entrada antes de evaluar la expresión.
+
+### 10. Pascal / Free Pascal ([pascal.pas](./pascal.pas))
+```pascal
+{ XPath Injection }
+program Example;
+begin
+  Expr := '//user[name=''' + Request.QueryFields.Values['user'] + ''']';
+  end.
+```
+- **Sink peligroso y causa raíz:** Consultas XPath construidas dinámicamente.
+- **Mecanismo de explotación y vector:** Bypass de filtros en XML.
+- **Remediación idiomática:** Filtrar metacaracteres de XPath.

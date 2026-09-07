@@ -9,6 +9,18 @@ function parseJson(req) {
   });
 }
 
+function deepMerge(target, source) {
+  for (const key of Object.keys(source)) {
+    if (typeof source[key] === 'object' && source[key] !== null && !Array.isArray(source[key])) {
+      if (!target[key]) target[key] = {};
+      deepMerge(target[key], source[key]);
+    } else {
+      target[key] = source[key];
+    }
+  }
+  return target;
+}
+
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost:3000');
   if (url.pathname === '/view') {
@@ -22,7 +34,8 @@ http.createServer(async (req, res) => {
     return res.end(`<style>${url.searchParams.get('css') || 'body{color:black}'}</style><h1>Styled</h1>`);
   }
   if (url.pathname === '/profile' && req.method === 'POST') {
-    Object.assign(profile, await parseJson(req));
+    const data = await parseJson(req);
+    deepMerge(profile, data);
     return res.end(JSON.stringify(profile));
   }
   res.end('Ejercicio8');

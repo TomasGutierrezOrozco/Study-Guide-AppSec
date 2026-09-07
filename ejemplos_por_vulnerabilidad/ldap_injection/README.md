@@ -1,63 +1,127 @@
 # LDAP Injection
 
-Este README aplica a todos los ejemplos de la carpeta. Aunque la sintaxis cambia entre lenguajes, la causa raiz de la vulnerabilidad es la misma.
+## Descripción General
+Aparece cuando una aplicación construye filtros de búsqueda LDAP concatenando entradas de usuario sin sanitizar. Un atacante puede inyectar operadores como `*`, `)(uid=*))` o `(|(password=*))` para eludir autenticaciones o volcar el directorio corporativo.
 
-## Que hace vulnerable al patron
-El patron vulnerable aparece al construir filtros o DN de LDAP con concatenacion de entrada no confiable.
-Caracteres especiales de LDAP alteran la logica del filtro. El atacante puede ampliar resultados, saltar autenticaciones o consultar atributos que no deberia poder pedir.
+## Patrones y Señales para Análisis SAST
+- Concatenación de cadenas en filtros LDAP como `(&(uid=" + user + "))`.
+- Falta de escape de caracteres reservados de LDAP (`*`, `(`, `)`, `\`, `NUL`).
 
-## Como identificar casos similares
-- Concatenacion manual en filtros LDAP.
-- Escape ausente o incompleto de caracteres especiales.
-- Parametros HTTP o campos de login usados directamente en consultas LDAP.
+## Estrategia de Mitigación y Buenas Prácticas
+- Utilizar funciones de escape contextual específicas para LDAP (ej. escapar RFC 4515).
+- Usar frameworks y APIs que admitan filtros parametrizados.
 
-## Explicacion por lenguaje
-### Python (`python.py`)
-Fragmento representativo: `ldap_filter=f'(uid={request.args["user"]})'`
-En este ejemplo, lo vulnerable es dejar que el atacante modifique la estructura del filtro LDAP y no solo su valor. En Python, usar f-strings, concatenacion, carga directa de objetos o parseo sin restricciones no agrega ninguna proteccion automatica.
-Para encontrar casos parecidos en Python, busca construccion manual de filtros/DN con datos externos y ausencia de escape o parametrizacion LDAP.
+## Análisis Técnico y Ejemplos por Lenguaje
 
-### JavaScript (`javascript.js`)
-Fragmento representativo: `function demo(req, res) { const filter=`(uid=${req.query.user})`; }`
-En este ejemplo, lo vulnerable es dejar que el atacante modifique la estructura del filtro LDAP y no solo su valor. En JavaScript, los valores que vienen de `req`, `body`, `query` o merges de objetos llegan intactos al sink si no se validan antes.
-Para encontrar casos parecidos en JavaScript, busca construccion manual de filtros/DN con datos externos y ausencia de escape o parametrizacion LDAP.
+### 1. Python ([python.py](./python.py))
+```python
+# LDAP Injection
+ldap_filter=f'(uid={request.args["user"]})'
+```
+- **Sink peligroso y causa raíz:** Interpolación en `ldap_filter = f"(uid={request.args['user']})"`.
+- **Mecanismo de explotación y vector:** Bypass de login inyectando `*)(uid=*))(|(uid=*`.
+- **Remediación idiomática:** Usar `ldap.filter.escape_filter_chars(user)` de `python-ldap`.
 
-### Java (`java.java`)
-Fragmento representativo: `public class Example { public void demo() throws Exception { String filter="(uid="+request.getParameter("user")+")"; } }`
-En este ejemplo, lo vulnerable es dejar que el atacante modifique la estructura del filtro LDAP y no solo su valor. En Java, concatenar `String`, deserializar o consumir datos de `request` deja toda la seguridad en la logica de la aplicacion.
-Para encontrar casos parecidos en Java, busca construccion manual de filtros/DN con datos externos y ausencia de escape o parametrizacion LDAP.
+### 2. JavaScript / Node.js ([javascript.js](./javascript.js))
+```javascript
+// LDAP Injection
+function demo(req, res) {
+  const filter=`(uid=${req.query.user})`;
+  }
+```
+- **Sink peligroso y causa raíz:** Construcción de filtros LDAP mediante template strings.
+- **Mecanismo de explotación y vector:** Autenticación como cualquier usuario del directorio activo.
+- **Remediación idiomática:** Usar librerías de escape de LDAP o parámetros tipados en `ldapjs`.
 
-### Go (`go.go`)
-Fragmento representativo: `package main func demo() { filter:="(uid="+r.URL.Query().Get("user")+")" }`
-En este ejemplo, lo vulnerable es dejar que el atacante modifique la estructura del filtro LDAP y no solo su valor. En Go, tomar valores desde `r.URL.Query()`, `body` o estructuras similares y pasarlos a APIs sensibles no introduce sanitizacion por defecto.
-Para encontrar casos parecidos en Go, busca construccion manual de filtros/DN con datos externos y ausencia de escape o parametrizacion LDAP.
+### 3. Java ([java.java](./java.java))
+```java
+// LDAP Injection
+public class Example {
+  public void demo() throws Exception {
+    String filter="(uid="+request.getParameter("user")+")";
+      }
+}
+```
+- **Sink peligroso y causa raíz:** Concatenación de cadenas en `DirContext.search("(&(uid=" + user + "))")`.
+- **Mecanismo de explotación y vector:** Extracción completa del árbol de usuarios del directorio.
+- **Remediación idiomática:** Usar búsquedas parametrizadas con placeholders en Spring LDAP o escapar con `LdapEncoder.filterEncode()`.
 
-### PHP (`php.php`)
-Fragmento representativo: `$filter='(uid='.$_GET['user'].')';`
-En este ejemplo, lo vulnerable es dejar que el atacante modifique la estructura del filtro LDAP y no solo su valor. En PHP, usar `$_GET`, `$_POST`, `php://input` o variables equivalentes directamente es un patron clasico de vulnerabilidad.
-Para encontrar casos parecidos en PHP, busca construccion manual de filtros/DN con datos externos y ausencia de escape o parametrizacion LDAP.
+### 4. Go ([go.go](./go.go))
+```go
+// LDAP Injection
+package main
+func demo() {
+  filter:="(uid="+r.URL.Query().Get("user")+")"
+  }
+```
+- **Sink peligroso y causa raíz:** Formateo de filtros LDAP con `fmt.Sprintf`.
+- **Mecanismo de explotación y vector:** Alteración de la lógica de consulta y bypass de contraseñas.
+- **Remediación idiomática:** Usar `ldap.EscapeFilter(user)` del paquete `go-ldap/ldap`.
 
-### Perl (`perl.pl`)
-Fragmento representativo: `sub demo { $filter = '(uid=' . param('user') . ')'; }`
-En este ejemplo, lo vulnerable es dejar que el atacante modifique la estructura del filtro LDAP y no solo su valor. En Perl, las variables interpoladas o concatenadas conservan el control del atacante sobre la operacion final.
-Para encontrar casos parecidos en Perl, busca construccion manual de filtros/DN con datos externos y ausencia de escape o parametrizacion LDAP.
+### 5. PHP ([php.php](./php.php))
+```php
+<?php
+// LDAP Injection
+$filter='(uid='.$_GET['user'].')';
+```
+- **Sink peligroso y causa raíz:** `$filter = "(uid=" . $_GET["user"] . ")";` en llamadas a `ldap_search`.
+- **Mecanismo de explotación y vector:** Extracción de atributos sensibles del directorio corporativo.
+- **Remediación idiomática:** Sanitizar con `ldap_escape($user, "", LDAP_ESCAPE_FILTER)`.
 
-### Pascal (`pascal.pas`)
-Fragmento representativo: `program Example; begin Filter := '(uid=' + Request.QueryFields.Values['user'] + ')'; end.`
-En este ejemplo, lo vulnerable es dejar que el atacante modifique la estructura del filtro LDAP y no solo su valor. En Pascal, concatenar strings o reutilizar datos de `Request` transmite el valor no confiable hasta la operacion sensible.
-Para encontrar casos parecidos en Pascal, busca construccion manual de filtros/DN con datos externos y ausencia de escape o parametrizacion LDAP.
+### 6. C# (.NET) ([csharp.cs](./csharp.cs))
+```csharp
+// LDAP Injection
+public class Example {
+  public void Demo() {
+    var filter = "(uid=" + Request.Query["user"] + ")";
+      }
+}
+```
+- **Sink peligroso y causa raíz:** Uso de `DirectorySearcher` concatenando texto en `Filter`.
+- **Mecanismo de explotación y vector:** Bypass de autenticación en Active Directory.
+- **Remediación idiomática:** Usar funciones de escape para caracteres LDAP o codificadores anti-XSS de Microsoft.
 
-### Ruby (`ruby.rb`)
-Fragmento representativo: `def demo(params) filter = "(uid=#{params[:user]})" end`
-En este ejemplo, lo vulnerable es dejar que el atacante modifique la estructura del filtro LDAP y no solo su valor. En Ruby, `params` e interpolacion hacen muy facil que la entrada del usuario llegue intacta a una API peligrosa.
-Para encontrar casos parecidos en Ruby, busca construccion manual de filtros/DN con datos externos y ausencia de escape o parametrizacion LDAP.
+### 7. Ruby ([ruby.rb](./ruby.rb))
+```ruby
+# LDAP Injection
+def demo(params)
+  filter = "(uid=#{params[:user]})"
+  end
+```
+- **Sink peligroso y causa raíz:** Concatenación de entradas en `net-ldap` queries.
+- **Mecanismo de explotación y vector:** Volcado de cuentas del directorio.
+- **Remediación idiomática:** Usar `Net::LDAP::Filter.eq("uid", user)` que aplica escape automático.
 
-### Rust (`rust.rs`)
-Fragmento representativo: `fn demo() { let filter = format!("(uid={})", user); }`
-En este ejemplo, lo vulnerable es dejar que el atacante modifique la estructura del filtro LDAP y no solo su valor. En Rust, la seguridad de memoria no evita fallas de logica: deserializar, concatenar o invocar APIs peligrosas con datos no confiables sigue siendo riesgoso.
-Para encontrar casos parecidos en Rust, busca construccion manual de filtros/DN con datos externos y ausencia de escape o parametrizacion LDAP.
+### 8. Rust ([rust.rs](./rust.rs))
+```rust
+// LDAP Injection
+fn demo() {
+  let filter = format!("(uid={})", user);
+  }
+```
+- **Sink peligroso y causa raíz:** Formateo de filtros LDAP con strings crudos.
+- **Mecanismo de explotación y vector:** Bypass de consultas LDAP.
+- **Remediación idiomática:** Escapar caracteres de control según RFC 4515.
 
-### C# (`csharp.cs`)
-Fragmento representativo: `public class Example { public void Demo() { var filter = "(uid=" + Request.Query["user"] + ")"; } }`
-En este ejemplo, lo vulnerable es dejar que el atacante modifique la estructura del filtro LDAP y no solo su valor. En C#, interpolacion, concatenacion, model binding o deserializacion no sustituyen validacion, autorizacion ni listas permitidas.
-Para encontrar casos parecidos en C#, busca construccion manual de filtros/DN con datos externos y ausencia de escape o parametrizacion LDAP.
+### 9. Perl ([perl.pl](./perl.pl))
+```perl
+# LDAP Injection
+sub demo {
+  $filter = '(uid=' . param('user') . ')';
+  }
+```
+- **Sink peligroso y causa raíz:** Interpolación en filtros de búsqueda LDAP.
+- **Mecanismo de explotación y vector:** Modificación de la lógica de autenticación.
+- **Remediación idiomática:** Usar `Net::LDAP::Filter` con escape adecuado.
+
+### 10. Pascal / Free Pascal ([pascal.pas](./pascal.pas))
+```pascal
+{ LDAP Injection }
+program Example;
+begin
+  Filter := '(uid=' + Request.QueryFields.Values['user'] + ')';
+  end.
+```
+- **Sink peligroso y causa raíz:** Construcción manual de cadenas de consulta LDAP.
+- **Mecanismo de explotación y vector:** Bypass de comprobaciones de credenciales.
+- **Remediación idiomática:** Escapar paréntesis y asteriscos en la entrada.

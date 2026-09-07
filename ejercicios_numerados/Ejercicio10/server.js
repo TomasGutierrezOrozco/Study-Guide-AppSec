@@ -17,7 +17,7 @@ http.createServer(async (req, res) => {
       return res.end(JSON.stringify({ data: { __schema: { types: ['User', 'Query', 'Mutation'] } } }));
     }
     if (query.includes('user(')) {
-      const match = query.match(/user\\(id:\\s*"(.*?)"\\)/);
+      const match = query.match(/user\(\s*id:\s*["']?(\w+)["']?\s*\)/);
       const id = match ? match[1] : '1';
       return res.end(JSON.stringify({ data: { user: users.find((u) => u.id === id) } }));
     }

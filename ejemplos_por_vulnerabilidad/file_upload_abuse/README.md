@@ -1,63 +1,131 @@
 # File Upload Abuse
 
-Este README aplica a todos los ejemplos de la carpeta. Aunque la sintaxis cambia entre lenguajes, la causa raiz de la vulnerabilidad es la misma.
+## Descripción General
+Se produce cuando una aplicación permite a los usuarios subir archivos pero no valida adecuadamente el nombre del archivo, su tipo real de contenido (MIME), su tamaño ni la ubicación de guardado. Permite subir webshells ejecutables a directorios web públicos, sobrescribir archivos del sistema mediante Path Traversal o agotar el espacio en disco.
 
-## Que hace vulnerable al patron
-La vulnerabilidad aparece cuando la aplicacion acepta archivos sin validar tipo real, contenido, ubicacion o permisos de ejecucion.
-Subir un archivo no es el problema principal. El riesgo aparece cuando se confia solo en la extension o en `Content-Type`, se guarda dentro del webroot o se procesa con herramientas inseguras.
+## Patrones y Señales para Análisis SAST
+- Uso directo del nombre provisto por el cliente (`filename`) al guardar el archivo sin sanitizar.
+- Almacenamiento de archivos dentro del Document Root del servidor web con permisos de ejecución.
+- Validación basada exclusivamente en la cabecera `Content-Type` enviada por el navegador.
 
-## Como identificar casos similares
-- Validaciones basadas solo en nombre o MIME enviado por el cliente.
-- Archivos guardados en rutas publicas o predecibles.
-- Falta de limites de tamano, renombrado seguro o allowlists de formatos.
+## Estrategia de Mitigación y Buenas Prácticas
+- Renombrar los archivos usando identificadores únicos generados en el servidor (ej. UUIDv4).
+- Almacenar los archivos fuera del directorio raíz web (`webroot`) o en servicios de almacenamiento de objetos (S3, GCS).
+- Validar el tipo real analizando los primeros bytes (Magic Bytes) y verificar extensiones contra una allowlist estricta.
+- Deshabilitar permisos de ejecución en el directorio de almacenamiento.
 
-## Explicacion por lenguaje
-### Python (`python.py`)
-Fragmento representativo: `request.files['file'].save('uploads/'+request.files['file'].filename)`
-En este ejemplo, lo vulnerable es aceptar y persistir contenido que el atacante controla sin limitar tipo, destino ni forma de uso posterior. En Python, usar f-strings, concatenacion, carga directa de objetos o parseo sin restricciones no agrega ninguna proteccion automatica.
-Para encontrar casos parecidos en Python, busca endpoints que escriban archivos con nombres o rutas controladas por el usuario o que validen solo extension/MIME.
+## Análisis Técnico y Ejemplos por Lenguaje
 
-### JavaScript (`javascript.js`)
-Fragmento representativo: `function demo(req, res) { fs.writeFileSync('uploads/'+req.files.file.name,req.files.file.data); }`
-En este ejemplo, lo vulnerable es aceptar y persistir contenido que el atacante controla sin limitar tipo, destino ni forma de uso posterior. En JavaScript, los valores que vienen de `req`, `body`, `query` o merges de objetos llegan intactos al sink si no se validan antes.
-Para encontrar casos parecidos en JavaScript, busca endpoints que escriban archivos con nombres o rutas controladas por el usuario o que validen solo extension/MIME.
+### 1. Python ([python.py](./python.py))
+```python
+# File Upload Abuse
+request.files['file'].save('uploads/'+request.files['file'].filename)
+```
+- **Sink peligroso y causa raíz:** `request.files["file"].save("uploads/" + file.filename)` sin sanitización.
+- **Mecanismo de explotación y vector:** Path traversal (`../../`) y sobrescritura de archivos o subida de scripts ejecutables.
+- **Remediación idiomática:** Usar `werkzeug.utils.secure_filename` y generar nombres con `uuid.uuid4()`.
 
-### Java (`java.java`)
-Fragmento representativo: `public class Example { public void demo() throws Exception { part.write("uploads/"+part.getSubmittedFileName()); } }`
-En este ejemplo, lo vulnerable es aceptar y persistir contenido que el atacante controla sin limitar tipo, destino ni forma de uso posterior. En Java, concatenar `String`, deserializar o consumir datos de `request` deja toda la seguridad en la logica de la aplicacion.
-Para encontrar casos parecidos en Java, busca endpoints que escriban archivos con nombres o rutas controladas por el usuario o que validen solo extension/MIME.
+### 2. JavaScript / Node.js ([javascript.js](./javascript.js))
+```javascript
+// File Upload Abuse
+function demo(req, res) {
+  fs.writeFileSync('uploads/'+req.files.file.name,req.files.file.data);
+  }
+```
+- **Sink peligroso y causa raíz:** `fs.writeFileSync("uploads/" + req.files.file.name, ...)` directo.
+- **Mecanismo de explotación y vector:** Sobrescritura de archivos arbitrarios y ejecución de código si el directorio se sirve públicamente.
+- **Remediación idiomática:** Usar `path.basename()` y generar un UUID seguro con `crypto.randomUUID()`.
 
-### Go (`go.go`)
-Fragmento representativo: `package main func demo() { f,_,_:=r.FormFile("file") _ = f }`
-En este ejemplo, lo vulnerable es aceptar y persistir contenido que el atacante controla sin limitar tipo, destino ni forma de uso posterior. En Go, tomar valores desde `r.URL.Query()`, `body` o estructuras similares y pasarlos a APIs sensibles no introduce sanitizacion por defecto.
-Para encontrar casos parecidos en Go, busca endpoints que escriban archivos con nombres o rutas controladas por el usuario o que validen solo extension/MIME.
+### 3. Java ([java.java](./java.java))
+```java
+// File Upload Abuse
+public class Example {
+  public void demo() throws Exception {
+    part.write("uploads/"+part.getSubmittedFileName());
+      }
+}
+```
+- **Sink peligroso y causa raíz:** `part.write("uploads/" + part.getSubmittedFileName())` con nombre del cliente.
+- **Mecanismo de explotación y vector:** Path traversal hacia rutas de sistema.
+- **Remediación idiomática:** Sanitizar con `Paths.get(name).getFileName().toString()` y verificar `startsWith(baseDir)`.
 
-### PHP (`php.php`)
-Fragmento representativo: `move_uploaded_file($_FILES['f']['tmp_name'],'uploads/'.$_FILES['f']['name']);`
-En este ejemplo, lo vulnerable es aceptar y persistir contenido que el atacante controla sin limitar tipo, destino ni forma de uso posterior. En PHP, usar `$_GET`, `$_POST`, `php://input` o variables equivalentes directamente es un patron clasico de vulnerabilidad.
-Para encontrar casos parecidos en PHP, busca endpoints que escriban archivos con nombres o rutas controladas por el usuario o que validen solo extension/MIME.
+### 4. Go ([go.go](./go.go))
+```go
+// File Upload Abuse
+package main
+func demo() {
+  f,_,_:=r.FormFile("file")
+  _ = f
+  }
+```
+- **Sink peligroso y causa raíz:** Guardado de archivo usando directamente el nombre de `r.FormFile`.
+- **Mecanismo de explotación y vector:** Path traversal y almacenamiento de archivos en ubicaciones críticas.
+- **Remediación idiomática:** Usar `filepath.Base()` o nombres aleatorios y limitar tamaño con `http.MaxBytesReader`.
 
-### Perl (`perl.pl`)
-Fragmento representativo: `sub demo { open my $fh, '>', 'uploads/' . $filename; }`
-En este ejemplo, lo vulnerable es aceptar y persistir contenido que el atacante controla sin limitar tipo, destino ni forma de uso posterior. En Perl, las variables interpoladas o concatenadas conservan el control del atacante sobre la operacion final.
-Para encontrar casos parecidos en Perl, busca endpoints que escriban archivos con nombres o rutas controladas por el usuario o que validen solo extension/MIME.
+### 5. PHP ([php.php](./php.php))
+```php
+<?php
+// File Upload Abuse
+move_uploaded_file($_FILES['f']['tmp_name'],'uploads/'.$_FILES['f']['name']);
+```
+- **Sink peligroso y causa raíz:** `move_uploaded_file($_FILES["f"]["tmp_name"], "uploads/" . $_FILES["f"]["name"])`.
+- **Mecanismo de explotación y vector:** Subida directa de webshells PHP (`.php`) que se ejecutan directamente al visitarlas.
+- **Remediación idiomática:** Renombrar a hash/UUID, validar extensión contra allowlist y guardar fuera de `public_html`.
 
-### Pascal (`pascal.pas`)
-Fragmento representativo: `program Example; begin Upload.SaveToFile('uploads/' + Upload.FileName); end.`
-En este ejemplo, lo vulnerable es aceptar y persistir contenido que el atacante controla sin limitar tipo, destino ni forma de uso posterior. En Pascal, concatenar strings o reutilizar datos de `Request` transmite el valor no confiable hasta la operacion sensible.
-Para encontrar casos parecidos en Pascal, busca endpoints que escriban archivos con nombres o rutas controladas por el usuario o que validen solo extension/MIME.
+### 6. C# (.NET) ([csharp.cs](./csharp.cs))
+```csharp
+// File Upload Abuse
+public class Example {
+  public void Demo() {
+    using var fs = File.Create("uploads/" + file.FileName);
+      }
+}
+```
+- **Sink peligroso y causa raíz:** `File.Create("uploads/" + file.FileName)` usando el nombre directo del cliente.
+- **Mecanismo de explotación y vector:** Path traversal en sistemas de archivos locales.
+- **Remediación idiomática:** Usar `Path.GetRandomFileName()` y almacenar metadatos en base de datos.
 
-### Ruby (`ruby.rb`)
-Fragmento representativo: `def demo(params) File.binwrite("uploads/#{params[:file].original_filename}", params[:file].read) end`
-En este ejemplo, lo vulnerable es aceptar y persistir contenido que el atacante controla sin limitar tipo, destino ni forma de uso posterior. En Ruby, `params` e interpolacion hacen muy facil que la entrada del usuario llegue intacta a una API peligrosa.
-Para encontrar casos parecidos en Ruby, busca endpoints que escriban archivos con nombres o rutas controladas por el usuario o que validen solo extension/MIME.
+### 7. Ruby ([ruby.rb](./ruby.rb))
+```ruby
+# File Upload Abuse
+def demo(params)
+  File.binwrite("uploads/#{params[:file].original_filename}", params[:file].read)
+  end
+```
+- **Sink peligroso y causa raíz:** `File.binwrite("uploads/#{params[:file].original_filename}", ...)` directo.
+- **Mecanismo de explotación y vector:** Path traversal y sobrescritura de código de la aplicación.
+- **Remediación idiomática:** Sanitizar con `File.basename` y generar identificador con `SecureRandom.uuid`.
 
-### Rust (`rust.rs`)
-Fragmento representativo: `fn demo() { std::fs::write(format!("uploads/{}", filename), bytes)?; }`
-En este ejemplo, lo vulnerable es aceptar y persistir contenido que el atacante controla sin limitar tipo, destino ni forma de uso posterior. En Rust, la seguridad de memoria no evita fallas de logica: deserializar, concatenar o invocar APIs peligrosas con datos no confiables sigue siendo riesgoso.
-Para encontrar casos parecidos en Rust, busca endpoints que escriban archivos con nombres o rutas controladas por el usuario o que validen solo extension/MIME.
+### 8. Rust ([rust.rs](./rust.rs))
+```rust
+// File Upload Abuse
+fn demo() {
+  std::fs::write(format!("uploads/{}", filename), bytes)?;
+  }
+```
+- **Sink peligroso y causa raíz:** `std::fs::write(format!("uploads/{}", filename), bytes)` sin validar.
+- **Mecanismo de explotación y vector:** Escritura arbitraria de archivos en el sistema de archivos.
+- **Remediación idiomática:** Usar `Path::new(filename).file_name()` o identificadores UUID con el crate `uuid`.
 
-### C# (`csharp.cs`)
-Fragmento representativo: `public class Example { public void Demo() { using var fs = File.Create("uploads/" + file.FileName); } }`
-En este ejemplo, lo vulnerable es aceptar y persistir contenido que el atacante controla sin limitar tipo, destino ni forma de uso posterior. En C#, interpolacion, concatenacion, model binding o deserializacion no sustituyen validacion, autorizacion ni listas permitidas.
-Para encontrar casos parecidos en C#, busca endpoints que escriban archivos con nombres o rutas controladas por el usuario o que validen solo extension/MIME.
+### 9. Perl ([perl.pl](./perl.pl))
+```perl
+# File Upload Abuse
+sub demo {
+  open my $fh, '>', 'uploads/' . $filename;
+  }
+```
+- **Sink peligroso y causa raíz:** Apertura de archivo con nombre controlado por el usuario.
+- **Mecanismo de explotación y vector:** Path traversal o inyección de modos en llamadas de apertura.
+- **Remediación idiomática:** Sanitizar con `File::Basename::basename` y forzar nombres aleatorios.
+
+### 10. Pascal / Free Pascal ([pascal.pas](./pascal.pas))
+```pascal
+{ File Upload Abuse }
+program Example;
+begin
+  Upload.SaveToFile('uploads/' + Upload.FileName);
+  end.
+```
+- **Sink peligroso y causa raíz:** `Upload.SaveToFile("uploads/" + Upload.FileName)` sin control.
+- **Mecanismo de explotación y vector:** Sobrescritura de binarios o bibliotecas del servidor.
+- **Remediación idiomática:** Usar `ExtractFileName()` y generar identificador aleatorio.

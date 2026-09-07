@@ -23,8 +23,14 @@ def bind_profile():
 @app.get("/admin")
 def admin():
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
-    payload = json.loads(base64.urlsafe_b64decode(token.split(".")[1] + "==")) if token else {}
-    return ("admin-ok" if payload.get("role") == "admin" else "forbidden")
+    try:
+        parts = token.split(".")
+        if len(parts) < 2:
+            return "forbidden", 403
+        payload = json.loads(base64.urlsafe_b64decode(parts[1] + "=="))
+        return "admin-ok" if payload.get("role") == "admin" else ("forbidden", 403)
+    except Exception:
+        return "invalid token", 401
 
 
 if __name__ == "__main__":

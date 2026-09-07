@@ -1,63 +1,129 @@
 # XML External Entity Injection (XXE)
 
-Este README aplica a todos los ejemplos de la carpeta. Aunque la sintaxis cambia entre lenguajes, la causa raiz de la vulnerabilidad es la misma.
+## Descripción General
+Ocurre cuando un analizador XML procesa documentos que contienen referencias a entidades externas (DOCTYPE / SYSTEM) con la resolución de entidades externas habilitada. Un atacante puede definir entidades que apunten a archivos locales (`file:///etc/passwd`) para exfiltrar información confidencial, forzar peticiones HTTP internas (SSRF) o causar denegación de servicio (Billion Laughs attack).
 
-## Que hace vulnerable al patron
-La vulnerabilidad aparece cuando un parser XML procesa entidades externas definidas por el atacante.
-Las entidades pueden apuntar a archivos locales, recursos internos o payloads expansivos. Si el parser las resuelve, el atacante obtiene lectura de archivos, SSRF o denegacion de servicio.
+## Patrones y Señales para Análisis SAST
+- Configuración de parsers XML (`DocumentBuilderFactory`, `XMLParser`, `DOMDocument`, `SAXParserFactory`) sin deshabilitar DTDs o entidades externas.
+- Uso de `resolve_entities=True` en `lxml`.
 
-## Como identificar casos similares
-- Parsers XML con DTD y entidades externas habilitadas.
-- Procesamiento de XML subido por usuarios o recibido desde terceros sin configuracion segura.
-- Uso de librerias antiguas o defaults inseguros.
+## Estrategia de Mitigación y Buenas Prácticas
+- Deshabilitar completamente la declaración y procesamiento de DTDs externos en el parser XML.
+- Desactivar la resolución de entidades externas generales y parametrizadas (`setFeature("http://xml.org/sax/features/external-general-entities", false)`).
+- Migrar a formatos de datos más simples y seguros como JSON si XML no es indispensable.
 
-## Explicacion por lenguaje
-### Python (`python.py`)
-Fragmento representativo: `root=etree.fromstring(request.data, parser=etree.XMLParser(resolve_entities=True))`
-En este ejemplo, lo vulnerable es permitir que el parser interprete definiciones externas provenientes del XML controlado por el atacante. En Python, usar f-strings, concatenacion, carga directa de objetos o parseo sin restricciones no agrega ninguna proteccion automatica.
-Para encontrar casos parecidos en Python, busca parseo XML con DTD/entidades externas habilitadas o sin hardening del parser.
+## Análisis Técnico y Ejemplos por Lenguaje
 
-### JavaScript (`javascript.js`)
-Fragmento representativo: `function demo(req, res) { parser.parse(req.body,{processEntities:true}); }`
-En este ejemplo, lo vulnerable es permitir que el parser interprete definiciones externas provenientes del XML controlado por el atacante. En JavaScript, los valores que vienen de `req`, `body`, `query` o merges de objetos llegan intactos al sink si no se validan antes.
-Para encontrar casos parecidos en JavaScript, busca parseo XML con DTD/entidades externas habilitadas o sin hardening del parser.
+### 1. Python ([python.py](./python.py))
+```python
+# XML External Entity Injection (XXE)
+root=etree.fromstring(request.data, parser=etree.XMLParser(resolve_entities=True))
+```
+- **Sink peligroso y causa raíz:** `lxml.etree.XMLParser(resolve_entities=True)` con parseo de entrada del usuario.
+- **Mecanismo de explotación y vector:** Lectura arbitraria de archivos locales (`file:///etc/passwd`) y SSRF.
+- **Remediación idiomática:** Desactivar resolución de entidades: `XMLParser(resolve_entities=False, no_network=True)` o usar `defusedxml`.
 
-### Java (`java.java`)
-Fragmento representativo: `public class Example { public void demo() throws Exception { DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(request.getInputStream()); } }`
-En este ejemplo, lo vulnerable es permitir que el parser interprete definiciones externas provenientes del XML controlado por el atacante. En Java, concatenar `String`, deserializar o consumir datos de `request` deja toda la seguridad en la logica de la aplicacion.
-Para encontrar casos parecidos en Java, busca parseo XML con DTD/entidades externas habilitadas o sin hardening del parser.
+### 2. JavaScript / Node.js ([javascript.js](./javascript.js))
+```javascript
+// XML External Entity Injection (XXE)
+function demo(req, res) {
+  parser.parse(req.body,{processEntities:true});
+  }
+```
+- **Sink peligroso y causa raíz:** Parsers XML en Node (como `libxmljs`) configurados con `noent: true`.
+- **Mecanismo de explotación y vector:** Exfiltración de archivos del servidor.
+- **Remediación idiomática:** Deshabilitar entidades externas en las opciones del parser XML.
 
-### Go (`go.go`)
-Fragmento representativo: `package main func demo() { decoder:=xml.NewDecoder(r.Body) }`
-En este ejemplo, lo vulnerable es permitir que el parser interprete definiciones externas provenientes del XML controlado por el atacante. En Go, tomar valores desde `r.URL.Query()`, `body` o estructuras similares y pasarlos a APIs sensibles no introduce sanitizacion por defecto.
-Para encontrar casos parecidos en Go, busca parseo XML con DTD/entidades externas habilitadas o sin hardening del parser.
+### 3. Java ([java.java](./java.java))
+```java
+// XML External Entity Injection (XXE)
+public class Example {
+  public void demo() throws Exception {
+    DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(request.getInputStream());
+      }
+}
+```
+- **Sink peligroso y causa raíz:** `DocumentBuilderFactory.newInstance()` sin configurar características de seguridad.
+- **Mecanismo de explotación y vector:** Lectura de archivos del sistema y SSRF interno.
+- **Remediación idiomática:** Configurar: `dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)`.
 
-### PHP (`php.php`)
-Fragmento representativo: `$dom=new DOMDocument(); $dom->loadXML(file_get_contents('php://input'), LIBXML_NOENT);`
-En este ejemplo, lo vulnerable es permitir que el parser interprete definiciones externas provenientes del XML controlado por el atacante. En PHP, usar `$_GET`, `$_POST`, `php://input` o variables equivalentes directamente es un patron clasico de vulnerabilidad.
-Para encontrar casos parecidos en PHP, busca parseo XML con DTD/entidades externas habilitadas o sin hardening del parser.
+### 4. Go ([go.go](./go.go))
+```go
+// XML External Entity Injection (XXE)
+package main
+func demo() {
+  decoder:=xml.NewDecoder(r.Body)
+  }
+```
+- **Sink peligroso y causa raíz:** Uso de parsers XML externos que resuelven DTDs.
+- **Mecanismo de explotación y vector:** Fuga de información confidencial.
+- **Remediación idiomática:** El paquete nativo `encoding/xml` de Go no soporta entidades externas por diseño; evitar librerías C-bindings inseguras.
 
-### Perl (`perl.pl`)
-Fragmento representativo: `sub demo { $parser->parse_string($xml); }`
-En este ejemplo, lo vulnerable es permitir que el parser interprete definiciones externas provenientes del XML controlado por el atacante. En Perl, las variables interpoladas o concatenadas conservan el control del atacante sobre la operacion final.
-Para encontrar casos parecidos en Perl, busca parseo XML con DTD/entidades externas habilitadas o sin hardening del parser.
+### 5. PHP ([php.php](./php.php))
+```php
+<?php
+// XML External Entity Injection (XXE)
+$dom=new DOMDocument();
+$dom->loadXML(file_get_contents('php://input'), LIBXML_NOENT);
+```
+- **Sink peligroso y causa raíz:** `$dom->loadXML($xml)` en versiones con `libxml_disable_entity_loader(false)`.
+- **Mecanismo de explotación y vector:** Lectura de archivos del servidor mediante `<!ENTITY xxe SYSTEM "file:///etc/passwd">`.
+- **Remediación idiomática:** Deshabilitar entidades con `libxml_disable_entity_loader(true)` o usar `LIBXML_NONET`.
 
-### Pascal (`pascal.pas`)
-Fragmento representativo: `program Example; begin XMLDoc.LoadFromXML(Request.Content); end.`
-En este ejemplo, lo vulnerable es permitir que el parser interprete definiciones externas provenientes del XML controlado por el atacante. En Pascal, concatenar strings o reutilizar datos de `Request` transmite el valor no confiable hasta la operacion sensible.
-Para encontrar casos parecidos en Pascal, busca parseo XML con DTD/entidades externas habilitadas o sin hardening del parser.
+### 6. C# (.NET) ([csharp.cs](./csharp.cs))
+```csharp
+// XML External Entity Injection (XXE)
+public class Example {
+  public void Demo() {
+    var doc = new XmlDocument(); doc.LoadXml(body);
+      }
+}
+```
+- **Sink peligroso y causa raíz:** `XmlDocument` con `XmlResolver` configurado sin protección en .NET Framework viejo.
+- **Mecanismo de explotación y vector:** Lectura de archivos confidenciales y SSRF.
+- **Remediación idiomática:** Configurar `xmlReaderSettings.DtdProcessing = DtdProcessing.Prohibit`.
 
-### Ruby (`ruby.rb`)
-Fragmento representativo: `def demo(params) doc = Nokogiri::XML(request.body.read) { |c| c.noent } end`
-En este ejemplo, lo vulnerable es permitir que el parser interprete definiciones externas provenientes del XML controlado por el atacante. En Ruby, `params` e interpolacion hacen muy facil que la entrada del usuario llegue intacta a una API peligrosa.
-Para encontrar casos parecidos en Ruby, busca parseo XML con DTD/entidades externas habilitadas o sin hardening del parser.
+### 7. Ruby ([ruby.rb](./ruby.rb))
+```ruby
+# XML External Entity Injection (XXE)
+def demo(params)
+  doc = Nokogiri::XML(request.body.read) { |c| c.noent }
+  end
+```
+- **Sink peligroso y causa raíz:** `Nokogiri::XML(xml) { |config| config.nonet }` sin la bandera adecuada.
+- **Mecanismo de explotación y vector:** Exfiltración de archivos mediante entidades XML.
+- **Remediación idiomática:** Configurar Nokogiri con `config.nonet.noent.strict` o deshabilitar DTDs.
 
-### Rust (`rust.rs`)
-Fragmento representativo: `fn demo() { }`
-En este ejemplo, lo vulnerable es permitir que el parser interprete definiciones externas provenientes del XML controlado por el atacante. En Rust, la seguridad de memoria no evita fallas de logica: deserializar, concatenar o invocar APIs peligrosas con datos no confiables sigue siendo riesgoso.
-Para encontrar casos parecidos en Rust, busca parseo XML con DTD/entidades externas habilitadas o sin hardening del parser.
+### 8. Rust ([rust.rs](./rust.rs))
+```rust
+// XML External Entity Injection (XXE)
+fn demo() {
+  // XML parser con entidades habilitadas o configuracion insegura.
+  }
+```
+- **Sink peligroso y causa raíz:** Parsers XML en Rust configurados para resolver entidades externas.
+- **Mecanismo de explotación y vector:** Fuga de archivos.
+- **Remediación idiomática:** Usar parsers seguros como `quick-xml` que no procesan DTDs externas por defecto.
 
-### C# (`csharp.cs`)
-Fragmento representativo: `public class Example { public void Demo() { var doc = new XmlDocument(); doc.LoadXml(body); } }`
-En este ejemplo, lo vulnerable es permitir que el parser interprete definiciones externas provenientes del XML controlado por el atacante. En C#, interpolacion, concatenacion, model binding o deserializacion no sustituyen validacion, autorizacion ni listas permitidas.
-Para encontrar casos parecidos en C#, busca parseo XML con DTD/entidades externas habilitadas o sin hardening del parser.
+### 9. Perl ([perl.pl](./perl.pl))
+```perl
+# XML External Entity Injection (XXE)
+sub demo {
+  $parser->parse_string($xml);
+  }
+```
+- **Sink peligroso y causa raíz:** Uso de `XML::LibXML` con opciones `load_ext_dtd` activas.
+- **Mecanismo de explotación y vector:** Inyección de entidades externas.
+- **Remediación idiomática:** Configurar el parser con `expand_entities(0)` y `load_ext_dtd(0)`.
+
+### 10. Pascal / Free Pascal ([pascal.pas](./pascal.pas))
+```pascal
+{ XML External Entity Injection (XXE) }
+program Example;
+begin
+  XMLDoc.LoadFromXML(Request.Content);
+  end.
+```
+- **Sink peligroso y causa raíz:** Parseo de documentos XML con DTDs activas.
+- **Mecanismo de explotación y vector:** Lectura de archivos locales.
+- **Remediación idiomática:** Desactivar la resolución de entidades externas en el componente DOM.

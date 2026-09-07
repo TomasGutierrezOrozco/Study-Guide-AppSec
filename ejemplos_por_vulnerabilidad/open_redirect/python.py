@@ -1,2 +1,3 @@
 # Open Redirect
-return redirect(request.args['next'])
+def demo():
+    return redirect(request.args['next'])

@@ -1,2 +1,3 @@
 # Cross-Site Scripting (XSS)
-return f"<h1>{request.args.get('q','')}</h1>"
+def demo():
+    return f"<h1>{request.args.get('q', '')}</h1>"

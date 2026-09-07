@@ -1,63 +1,133 @@
+# Race Conditions (TOCTOU)
+
+## Descripción General
+Ocurre cuando la lógica de una aplicación comprueba una condición (Time Of Check) y posteriormente ejecuta una acción (Time Of Use) en operaciones separadas no atómicas. Si un atacante envía múltiples solicitudes simultáneas que se procesan concurrentemente, todas pueden superar la verificación antes de que se registre el primer cambio de estado (ej. canje múltiple de cupones, doble retiro bancario).
+
+## Patrones y Señales para Análisis SAST
+- Consultas tipo `SELECT` seguidas de `UPDATE` sin bloqueos de fila (`SELECT ... FOR UPDATE`) ni transacciones.
+- Operaciones de verificación de saldo y débito en llamadas de base de datos desacopladas.
+
+## Estrategia de Mitigación y Buenas Prácticas
+- Utilizar actualizaciones atómicas en una sola instrucción SQL: `UPDATE coupons SET used = 1 WHERE code = ? AND used = 0`.
+- Emplear transacciones con nivel de aislamiento serializable o bloqueos pesimistas (`SELECT ... FOR UPDATE`).
+- Implementar bloqueos distribuidos (ej. con Redis Redlock) para operaciones de alto valor.
+
+## Análisis Técnico y Ejemplos por Lenguaje
+
+### 1. Python ([python.py](./python.py))
+```python
 # Race Condition
+if not used(code):
+    credit(user)
+    mark_used(code)
+```
+- **Sink peligroso y causa raíz:** `SELECT used` seguido de `UPDATE` sin transacción atómica.
+- **Mecanismo de explotación y vector:** Uso concurrente de cupones y multiplicación de saldo de forma ilimitada.
+- **Remediación idiomática:** Usar updates atómicos: `UPDATE coupons SET used = 1 WHERE code = ? AND used = 0` y verificar `rowcount == 1`.
 
-Este README aplica a todos los ejemplos de la carpeta. Aunque la sintaxis cambia entre lenguajes, la causa raiz de la vulnerabilidad es la misma.
+### 2. JavaScript / Node.js ([javascript.js](./javascript.js))
+```javascript
+// Race Condition
+function demo(req, res) {
+  if(!coupon.used){credit();coupon.used=true;}
+  }
+```
+- **Sink peligroso y causa raíz:** Comprobación asíncrona de saldo y posterior deducción tras un `await`.
+- **Mecanismo de explotación y vector:** Doble gasto y saldo negativo en la cuenta del usuario.
+- **Remediación idiomática:** Ejecutar la transacción con bloqueos en la base de datos o transacciones atómicas de MongoDB (`$inc`).
 
-## Que hace vulnerable al patron
-La vulnerabilidad existe cuando el resultado depende del orden o simultaneidad de operaciones que no estan sincronizadas correctamente.
-El patron clasico es `verificar y luego usar`. Si dos peticiones pasan la validacion al mismo tiempo, ambas pueden consumir un recurso, gastar saldo o escribir un estado que debia ser unico.
+### 3. Java ([java.java](./java.java))
+```java
+// Race Condition
+public class Example {
+  public void demo() throws Exception {
+    if(!coupon.isUsed()){credit();coupon.setUsed(true);}
+      }
+}
+```
+- **Sink peligroso y causa raíz:** Lectura y escritura en base de datos en métodos sin anotación `@Transactional`.
+- **Mecanismo de explotación y vector:** Inconsistencia financiera en operaciones concurrentes.
+- **Remediación idiomática:** Usar `@Transactional` con bloqueo pesimista `LockModeType.PESSIMISTIC_WRITE`.
 
-## Como identificar casos similares
-- Patrones TOCTOU sobre saldo, stock, permisos o existencia.
-- Lectura y escritura separadas sobre el mismo recurso sensible.
-- Ausencia de locks, transacciones o operaciones atomicas.
+### 4. Go ([go.go](./go.go))
+```go
+// Race Condition
+package main
+func demo() {
+  if !coupon.Used { credit(user); coupon.Used=true }
+  }
+```
+- **Sink peligroso y causa raíz:** Lectura de flag en memoria o BD sin mutex ni transacción.
+- **Mecanismo de explotación y vector:** Superación de límites de cuotas mediante requests concurrentes.
+- **Remediación idiomática:** Usar canales, `sync.Mutex` o transacciones SQL a nivel de base de datos.
 
-## Explicacion por lenguaje
-### Python (`python.py`)
-Fragmento representativo: `if not used(code): credit(user) mark_used(code)`
-En este ejemplo, lo vulnerable es separar la verificacion del uso final de un recurso sin una garantia atomica entre ambos pasos. En Python, usar f-strings, concatenacion, carga directa de objetos o parseo sin restricciones no agrega ninguna proteccion automatica.
-Para encontrar casos parecidos en Python, busca secuencias de leer-validar-escribir sobre el mismo recurso sin lock, transaccion o constraint atomico.
+### 5. PHP ([php.php](./php.php))
+```php
+<?php
+// Race Condition
+if(!used($code)){credit($user);markUsed($code);}
+```
+- **Sink peligroso y causa raíz:** Comprobación `if (!used($code))` y posterior llamada a `markUsed($code)`.
+- **Mecanismo de explotación y vector:** Canje múltiple del mismo cupón con peticiones simultáneas.
+- **Remediación idiomática:** Usar transacciones PDO con `FOR UPDATE` o actualización condicional en una sola sentencia.
 
-### JavaScript (`javascript.js`)
-Fragmento representativo: `function demo(req, res) { if(!coupon.used){credit();coupon.used=true;} }`
-En este ejemplo, lo vulnerable es separar la verificacion del uso final de un recurso sin una garantia atomica entre ambos pasos. En JavaScript, los valores que vienen de `req`, `body`, `query` o merges de objetos llegan intactos al sink si no se validan antes.
-Para encontrar casos parecidos en JavaScript, busca secuencias de leer-validar-escribir sobre el mismo recurso sin lock, transaccion o constraint atomico.
+### 6. C# (.NET) ([csharp.cs](./csharp.cs))
+```csharp
+// Race Condition
+public class Example {
+  public void Demo() {
+    if (!coupon.Used) { Credit(user); coupon.Used = true; }
+      }
+}
+```
+- **Sink peligroso y causa raíz:** Lectura y guardado con `DbContext.SaveChangesAsync` sin concurrencia optimista.
+- **Mecanismo de explotación y vector:** Múltiples aprobaciones de la misma transacción.
+- **Remediación idiomática:** Implementar tokens de concurrencia en EF Core o bloqueos pesimistas en SQL Server.
 
-### Java (`java.java`)
-Fragmento representativo: `public class Example { public void demo() throws Exception { if(!coupon.isUsed()){credit();coupon.setUsed(true);} } }`
-En este ejemplo, lo vulnerable es separar la verificacion del uso final de un recurso sin una garantia atomica entre ambos pasos. En Java, concatenar `String`, deserializar o consumir datos de `request` deja toda la seguridad en la logica de la aplicacion.
-Para encontrar casos parecidos en Java, busca secuencias de leer-validar-escribir sobre el mismo recurso sin lock, transaccion o constraint atomico.
+### 7. Ruby ([ruby.rb](./ruby.rb))
+```ruby
+# Race Condition
+def demo(params)
+  unless coupon.used
+    credit(user)
+    coupon.update!(used: true)
+  end
+  end
+```
+- **Sink peligroso y causa raíz:** `coupon.used?` seguido de `coupon.update(used: true)` en Rails.
+- **Mecanismo de explotación y vector:** Doble canje mediante ataques de concurrencia.
+- **Remediación idiomática:** Usar `coupon.with_lock` en ActiveRecord para adquirir bloqueo de fila en BD.
 
-### Go (`go.go`)
-Fragmento representativo: `package main func demo() { if !coupon.Used { credit(user); coupon.Used=true } }`
-En este ejemplo, lo vulnerable es separar la verificacion del uso final de un recurso sin una garantia atomica entre ambos pasos. En Go, tomar valores desde `r.URL.Query()`, `body` o estructuras similares y pasarlos a APIs sensibles no introduce sanitizacion por defecto.
-Para encontrar casos parecidos en Go, busca secuencias de leer-validar-escribir sobre el mismo recurso sin lock, transaccion o constraint atomico.
+### 8. Rust ([rust.rs](./rust.rs))
+```rust
+// Race Condition
+fn demo() {
+  if !coupon.used { credit(user); coupon.used = true; }
+  }
+```
+- **Sink peligroso y causa raíz:** Verificación y actualización sin bloqueos de base de datos en handlers async.
+- **Mecanismo de explotación y vector:** Inconsistencias de balance.
+- **Remediación idiomática:** Usar transacciones con aislamiento Serializable en SQLx / Diesel.
 
-### PHP (`php.php`)
-Fragmento representativo: `if(!used($code)){credit($user);markUsed($code);}`
-En este ejemplo, lo vulnerable es separar la verificacion del uso final de un recurso sin una garantia atomica entre ambos pasos. En PHP, usar `$_GET`, `$_POST`, `php://input` o variables equivalentes directamente es un patron clasico de vulnerabilidad.
-Para encontrar casos parecidos en PHP, busca secuencias de leer-validar-escribir sobre el mismo recurso sin lock, transaccion o constraint atomico.
+### 9. Perl ([perl.pl](./perl.pl))
+```perl
+# Race Condition
+sub demo {
+  unless ($coupon->{used}) { credit($user); $coupon->{used}=1; }
+  }
+```
+- **Sink peligroso y causa raíz:** Verificación y marcado de estado en pasos separados.
+- **Mecanismo de explotación y vector:** Ejecución repetida de acciones restringidas.
+- **Remediación idiomática:** Aplicar bloqueos en la base de datos.
 
-### Perl (`perl.pl`)
-Fragmento representativo: `sub demo { unless ($coupon->{used}) { credit($user); $coupon->{used}=1; } }`
-En este ejemplo, lo vulnerable es separar la verificacion del uso final de un recurso sin una garantia atomica entre ambos pasos. En Perl, las variables interpoladas o concatenadas conservan el control del atacante sobre la operacion final.
-Para encontrar casos parecidos en Perl, busca secuencias de leer-validar-escribir sobre el mismo recurso sin lock, transaccion o constraint atomico.
-
-### Pascal (`pascal.pas`)
-Fragmento representativo: `program Example; begin if not Coupon.Used then begin Credit(User); Coupon.Used := True; end; end.`
-En este ejemplo, lo vulnerable es separar la verificacion del uso final de un recurso sin una garantia atomica entre ambos pasos. En Pascal, concatenar strings o reutilizar datos de `Request` transmite el valor no confiable hasta la operacion sensible.
-Para encontrar casos parecidos en Pascal, busca secuencias de leer-validar-escribir sobre el mismo recurso sin lock, transaccion o constraint atomico.
-
-### Ruby (`ruby.rb`)
-Fragmento representativo: `def demo(params) unless coupon.used credit(user) coupon.update!(used: true) end end`
-En este ejemplo, lo vulnerable es separar la verificacion del uso final de un recurso sin una garantia atomica entre ambos pasos. En Ruby, `params` e interpolacion hacen muy facil que la entrada del usuario llegue intacta a una API peligrosa.
-Para encontrar casos parecidos en Ruby, busca secuencias de leer-validar-escribir sobre el mismo recurso sin lock, transaccion o constraint atomico.
-
-### Rust (`rust.rs`)
-Fragmento representativo: `fn demo() { if !coupon.used { credit(user); coupon.used = true; } }`
-En este ejemplo, lo vulnerable es separar la verificacion del uso final de un recurso sin una garantia atomica entre ambos pasos. En Rust, la seguridad de memoria no evita fallas de logica: deserializar, concatenar o invocar APIs peligrosas con datos no confiables sigue siendo riesgoso.
-Para encontrar casos parecidos en Rust, busca secuencias de leer-validar-escribir sobre el mismo recurso sin lock, transaccion o constraint atomico.
-
-### C# (`csharp.cs`)
-Fragmento representativo: `public class Example { public void Demo() { if (!coupon.Used) { Credit(user); coupon.Used = true; } } }`
-En este ejemplo, lo vulnerable es separar la verificacion del uso final de un recurso sin una garantia atomica entre ambos pasos. En C#, interpolacion, concatenacion, model binding o deserializacion no sustituyen validacion, autorizacion ni listas permitidas.
-Para encontrar casos parecidos en C#, busca secuencias de leer-validar-escribir sobre el mismo recurso sin lock, transaccion o constraint atomico.
+### 10. Pascal / Free Pascal ([pascal.pas](./pascal.pas))
+```pascal
+{ Race Condition }
+program Example;
+begin
+  if not Coupon.Used then begin Credit(User); Coupon.Used := True; end;
+  end.
+```
+- **Sink peligroso y causa raíz:** Comprobación de estado sin sincronización de subprocesos.
+- **Mecanismo de explotación y vector:** Condición de carrera lógica.
+- **Remediación idiomática:** Sincronizar el acceso mediante secciones críticas o bloqueos de base de datos.

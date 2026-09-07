@@ -22,13 +22,20 @@ const server = http.createServer((req, res) => {
       res.writeHead(401, { 'Content-Type': 'text/plain' });
       return res.end(`Envia Authorization: Bearer ${demoToken}`);
     }
-    const payload = JSON.parse(Buffer.from(token.split('.')[1] || '', 'base64url').toString('utf8'));
-    if (payload.role === 'admin') {
-      res.writeHead(200, { 'Content-Type': 'text/plain' });
-      return res.end('admin-panel');
+    try {
+      const parts = token.split('.');
+      if (parts.length < 2) throw new Error('invalid format');
+      const payload = JSON.parse(Buffer.from(parts[1] || '', 'base64url').toString('utf8'));
+      if (payload.role === 'admin') {
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        return res.end('admin-panel');
+      }
+      res.writeHead(403, { 'Content-Type': 'text/plain' });
+      return res.end('forbidden');
+    } catch {
+      res.writeHead(401, { 'Content-Type': 'text/plain' });
+      return res.end('invalid token');
     }
-    res.writeHead(403, { 'Content-Type': 'text/plain' });
-    return res.end('forbidden');
   }
 
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });

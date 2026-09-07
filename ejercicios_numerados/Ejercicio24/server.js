@@ -19,7 +19,7 @@ http.createServer(async (req, res) => {
       return res.end(JSON.stringify({ data: { __schema: { types: ['Invoice', 'Query'] } } }));
     }
     if (query.includes('invoice(')) {
-      const match = query.match(/invoice\\(id:\\s*"(.*?)"\\)/);
+      const match = query.match(/invoice\(\s*id:\s*["']?(\w+)["']?\s*\)/);
       const id = match ? match[1] : '1';
       return res.end(JSON.stringify({ data: { invoice: invoices.find((i) => i.id === id) } }));
     }

@@ -1,63 +1,129 @@
 # Local File Inclusion (LFI)
 
-Este README aplica a todos los ejemplos de la carpeta. Aunque la sintaxis cambia entre lenguajes, la causa raiz de la vulnerabilidad es la misma.
+## Descripción General
+Permite a un atacante incluir y leer (o en ciertos entornos ejecutar) archivos del sistema de archivos local manipulando rutas provistas en parámetros HTTP. Utiliza secuencias de escape como `../` o rutas absolutas hacia archivos sensibles (`/etc/passwd`, variables de entorno, código fuente).
 
-## Que hace vulnerable al patron
-La vulnerabilidad existe cuando el usuario controla una ruta de archivo local que la aplicacion abre, incluye o renderiza.
-El nombre de archivo parece un dato inocuo, pero en realidad define que recurso del sistema se leera o ejecutara. Con traversal o rutas absolutas, el atacante sale del directorio esperado.
+## Patrones y Señales para Análisis SAST
+- Paso de entradas de usuario a funciones de lectura o inclusión (`open()`, `include()`, `fs.readFile()`, `os.ReadFile()`).
+- Ausencia de canonicalización de rutas y verificación del directorio base.
 
-## Como identificar casos similares
-- Parametros `file`, `page`, `template` o `path` usados en `open`, `include` o equivalentes.
-- Ausencia de canonicalizacion y validacion de la ruta final.
-- Soporte para `../`, rutas absolutas o extensiones controladas por el usuario.
+## Estrategia de Mitigación y Buenas Prácticas
+- Usar una allowlist estricta de nombres de archivos válidos en lugar de rutas dinámicas.
+- Canonicalizar la ruta (`realpath`, `Path.normalize()`) y comprobar que comience con el directorio base permitido.
+- Almacenar archivos con nombres generados por la aplicación en carpetas aisladas.
 
-## Explicacion por lenguaje
-### Python (`python.py`)
-Fragmento representativo: `return open(request.args['file']).read()`
-En este ejemplo, lo vulnerable es permitir que la entrada del usuario decida que archivo del sistema se abre o se incluye. En Python, usar f-strings, concatenacion, carga directa de objetos o parseo sin restricciones no agrega ninguna proteccion automatica.
-Para encontrar casos parecidos en Python, busca parametros de ruta usados en lectura, inclusion o render de archivos sin resolver y validar la ruta final.
+## Análisis Técnico y Ejemplos por Lenguaje
 
-### JavaScript (`javascript.js`)
-Fragmento representativo: `function demo(req, res) { res.send(fs.readFileSync(req.query.file,'utf8')); }`
-En este ejemplo, lo vulnerable es permitir que la entrada del usuario decida que archivo del sistema se abre o se incluye. En JavaScript, los valores que vienen de `req`, `body`, `query` o merges de objetos llegan intactos al sink si no se validan antes.
-Para encontrar casos parecidos en JavaScript, busca parametros de ruta usados en lectura, inclusion o render de archivos sin resolver y validar la ruta final.
+### 1. Python ([python.py](./python.py))
+```python
+# Local File Inclusion (LFI)
+def demo():
+    return open(request.args['file']).read()
+```
+- **Sink peligroso y causa raíz:** `open(request.args["file"]).read()` sin validar la ruta.
+- **Mecanismo de explotación y vector:** Lectura de archivos del sistema como `/etc/passwd` o código confidencial.
+- **Remediación idiomática:** Usar `Path(base).resolve()` y verificar `target.is_relative_to(base)`.
 
-### Java (`java.java`)
-Fragmento representativo: `public class Example { public void demo() throws Exception { Files.readString(Path.of(request.getParameter("file"))); } }`
-En este ejemplo, lo vulnerable es permitir que la entrada del usuario decida que archivo del sistema se abre o se incluye. En Java, concatenar `String`, deserializar o consumir datos de `request` deja toda la seguridad en la logica de la aplicacion.
-Para encontrar casos parecidos en Java, busca parametros de ruta usados en lectura, inclusion o render de archivos sin resolver y validar la ruta final.
+### 2. JavaScript / Node.js ([javascript.js](./javascript.js))
+```javascript
+// Local File Inclusion (LFI)
+function demo(req, res) {
+  res.send(fs.readFileSync(req.query.file,'utf8'));
+  }
+```
+- **Sink peligroso y causa raíz:** `fs.readFileSync("templates/" + req.query.file)` con concatenación.
+- **Mecanismo de explotación y vector:** Fuga de secretos de entorno y archivos de configuración.
+- **Remediación idiomática:** Usar `path.resolve` y verificar `targetPath.startsWith(allowedBasePath)`.
 
-### Go (`go.go`)
-Fragmento representativo: `package main func demo() { os.ReadFile(r.URL.Query().Get("file")) }`
-En este ejemplo, lo vulnerable es permitir que la entrada del usuario decida que archivo del sistema se abre o se incluye. En Go, tomar valores desde `r.URL.Query()`, `body` o estructuras similares y pasarlos a APIs sensibles no introduce sanitizacion por defecto.
-Para encontrar casos parecidos en Go, busca parametros de ruta usados en lectura, inclusion o render de archivos sin resolver y validar la ruta final.
+### 3. Java ([java.java](./java.java))
+```java
+// Local File Inclusion (LFI)
+public class Example {
+  public void demo() throws Exception {
+    Files.readString(Path.of(request.getParameter("file")));
+      }
+}
+```
+- **Sink peligroso y causa raíz:** `Files.readString(Path.of("/docs").resolve(filename))` sin canonicalizar.
+- **Mecanismo de explotación y vector:** Lectura arbitraria del sistema de archivos del host.
+- **Remediación idiomática:** Usar `target.toRealPath()` y comprobar `target.startsWith(baseDir)`.
 
-### PHP (`php.php`)
-Fragmento representativo: `include($_GET['file']);`
-En este ejemplo, lo vulnerable es permitir que la entrada del usuario decida que archivo del sistema se abre o se incluye. En PHP, usar `$_GET`, `$_POST`, `php://input` o variables equivalentes directamente es un patron clasico de vulnerabilidad.
-Para encontrar casos parecidos en PHP, busca parametros de ruta usados en lectura, inclusion o render de archivos sin resolver y validar la ruta final.
+### 4. Go ([go.go](./go.go))
+```go
+// Local File Inclusion (LFI)
+package main
+func demo() {
+  os.ReadFile(r.URL.Query().Get("file"))
+  }
+```
+- **Sink peligroso y causa raíz:** `os.ReadFile("/data/" + name)` sin verificación de ruta base.
+- **Mecanismo de explotación y vector:** Extracción de archivos confidenciales del contenedor/host.
+- **Remediación idiomática:** Usar `filepath.Clean` y verificar con `filepath.Rel` que no inicie con `..`.
 
-### Perl (`perl.pl`)
-Fragmento representativo: `sub demo { print do { local(@ARGV, $/) = $file; <> }; }`
-En este ejemplo, lo vulnerable es permitir que la entrada del usuario decida que archivo del sistema se abre o se incluye. En Perl, las variables interpoladas o concatenadas conservan el control del atacante sobre la operacion final.
-Para encontrar casos parecidos en Perl, busca parametros de ruta usados en lectura, inclusion o render de archivos sin resolver y validar la ruta final.
+### 5. PHP ([php.php](./php.php))
+```php
+<?php
+// Local File Inclusion (LFI)
+include($_GET['file']);
+```
+- **Sink peligroso y causa raíz:** `include($_GET["file"])` directo.
+- **Mecanismo de explotación y vector:** LFI con ejecución de código PHP si el archivo contiene código ejecutable.
+- **Remediación idiomática:** Usar allowlist de nombres permitidos: `if (!in_array($f, $allowed)) die(); include $f;`.
 
-### Pascal (`pascal.pas`)
-Fragmento representativo: `program Example; begin Response.Content := TStringList.Create.Text; end.`
-En este ejemplo, lo vulnerable es permitir que la entrada del usuario decida que archivo del sistema se abre o se incluye. En Pascal, concatenar strings o reutilizar datos de `Request` transmite el valor no confiable hasta la operacion sensible.
-Para encontrar casos parecidos en Pascal, busca parametros de ruta usados en lectura, inclusion o render de archivos sin resolver y validar la ruta final.
+### 6. C# (.NET) ([csharp.cs](./csharp.cs))
+```csharp
+// Local File Inclusion (LFI)
+public class Example {
+  public void Demo() {
+    var body = File.ReadAllText(Request.Query["file"]);
+      }
+}
+```
+- **Sink peligroso y causa raíz:** `File.ReadAllText(Path.Combine(basePath, userInput))` sin verificación de prefijo.
+- **Mecanismo de explotación y vector:** Bypass de carpeta base mediante rutas absolutas o traversal.
+- **Remediación idiomática:** Verificar con `Path.GetFullPath` que la ruta inicie con `baseDir`.
 
-### Ruby (`ruby.rb`)
-Fragmento representativo: `def demo(params) render plain: File.read(params[:file]) end`
-En este ejemplo, lo vulnerable es permitir que la entrada del usuario decida que archivo del sistema se abre o se incluye. En Ruby, `params` e interpolacion hacen muy facil que la entrada del usuario llegue intacta a una API peligrosa.
-Para encontrar casos parecidos en Ruby, busca parametros de ruta usados en lectura, inclusion o render de archivos sin resolver y validar la ruta final.
+### 7. Ruby ([ruby.rb](./ruby.rb))
+```ruby
+# Local File Inclusion (LFI)
+def demo(params)
+  render plain: File.read(params[:file])
+  end
+```
+- **Sink peligroso y causa raíz:** `File.read("pages/#{params[:page]}")` sin normalizar.
+- **Mecanismo de explotación y vector:** Lectura de credenciales y archivos de base de datos.
+- **Remediación idiomática:** Usar `Pathname.new(path).cleanpath` y verificar pertenencia al directorio base.
 
-### Rust (`rust.rs`)
-Fragmento representativo: `fn demo() { let body = std::fs::read_to_string(file)?; }`
-En este ejemplo, lo vulnerable es permitir que la entrada del usuario decida que archivo del sistema se abre o se incluye. En Rust, la seguridad de memoria no evita fallas de logica: deserializar, concatenar o invocar APIs peligrosas con datos no confiables sigue siendo riesgoso.
-Para encontrar casos parecidos en Rust, busca parametros de ruta usados en lectura, inclusion o render de archivos sin resolver y validar la ruta final.
+### 8. Rust ([rust.rs](./rust.rs))
+```rust
+// Local File Inclusion (LFI)
+fn demo() {
+  let body = std::fs::read_to_string(file)?;
+  }
+```
+- **Sink peligroso y causa raíz:** `std::fs::read_to_string(format!("/srv/{}", file))` sin comprobación.
+- **Mecanismo de explotación y vector:** Lectura de archivos confidenciales en el host.
+- **Remediación idiomática:** Usar `canonicalize()` y verificar que el path comience con la base esperada.
 
-### C# (`csharp.cs`)
-Fragmento representativo: `public class Example { public void Demo() { var body = File.ReadAllText(Request.Query["file"]); } }`
-En este ejemplo, lo vulnerable es permitir que la entrada del usuario decida que archivo del sistema se abre o se incluye. En C#, interpolacion, concatenacion, model binding o deserializacion no sustituyen validacion, autorizacion ni listas permitidas.
-Para encontrar casos parecidos en C#, busca parametros de ruta usados en lectura, inclusion o render de archivos sin resolver y validar la ruta final.
+### 9. Perl ([perl.pl](./perl.pl))
+```perl
+# Local File Inclusion (LFI)
+sub demo {
+  print do { local(@ARGV, $/) = $file; <> };
+  }
+```
+- **Sink peligroso y causa raíz:** `open my $fh, "<", $path` donde `$path` viene de parámetro.
+- **Mecanismo de explotación y vector:** Lectura de archivos arbitrarios del servidor.
+- **Remediación idiomática:** Validar la ruta y restringir a nombres de archivo predefinidos.
+
+### 10. Pascal / Free Pascal ([pascal.pas](./pascal.pas))
+```pascal
+{ Local File Inclusion (LFI) }
+program Example;
+begin
+  Response.Content := TStringList.Create.Text;
+  end.
+```
+- **Sink peligroso y causa raíz:** Lectura de archivos con nombres tomados de la solicitud.
+- **Mecanismo de explotación y vector:** Exposición de archivos del sistema operativo.
+- **Remediación idiomática:** Verificar que la ruta resuelta permanezca en la carpeta autorizada.

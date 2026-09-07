@@ -13,7 +13,7 @@
 
 ### Ejercicio 1
 
-Archivo: `snippets/bash_cmdi.sh`
+Archivo: [`snippets/bash_cmdi.sh`](../snippets/bash_cmdi.sh)
 
 Hallazgo:
 
@@ -27,7 +27,7 @@ Hallazgo:
 
 ### Ejercicio 2
 
-Archivo: `snippets/go_ssrf.go`
+Archivo: [`snippets/go_ssrf.go`](../snippets/go_ssrf.go)
 
 Hallazgo:
 
@@ -39,7 +39,7 @@ Hallazgo:
 
 ### Ejercicio 3
 
-Archivo: `snippets/go_path_traversal.go`
+Archivo: [`snippets/go_path_traversal.go`](../snippets/go_path_traversal.go)
 
 Hallazgo:
 
@@ -53,7 +53,7 @@ Hallazgo:
 
 ### Ejercicio 4
 
-Archivo: `snippets/php_sqli.php`
+Archivo: [`snippets/php_sqli.php`](../snippets/php_sqli.php)
 
 Hallazgo:
 
@@ -65,7 +65,7 @@ Hallazgo:
 
 ### Ejercicio 5
 
-Archivo: `snippets/php_cmdi.php`
+Archivo: [`snippets/php_cmdi.php`](../snippets/php_cmdi.php)
 
 Hallazgo:
 
@@ -79,7 +79,7 @@ Hallazgo:
 
 ### Ejercicio 6
 
-Archivo: `snippets/python_pickle.py`
+Archivo: [`snippets/python_pickle.py`](../snippets/python_pickle.py)
 
 Hallazgo:
 
@@ -91,7 +91,7 @@ Hallazgo:
 
 ### Ejercicio 7
 
-Archivo: `snippets/python_csrf.py`
+Archivo: [`snippets/python_csrf.py`](../snippets/python_csrf.py)
 
 Hallazgo:
 
@@ -104,7 +104,7 @@ Hallazgo:
 
 ### Ejercicio 8
 
-Archivo: `snippets/java_deser.java`
+Archivo: [`snippets/java_deser.java`](../snippets/java_deser.java)
 
 Hallazgo:
 
@@ -116,7 +116,7 @@ Hallazgo:
 
 ### Ejercicio 9
 
-Archivo: `snippets/java_path_traversal.java`
+Archivo: [`snippets/java_path_traversal.java`](../snippets/java_path_traversal.java)
 
 Hallazgo:
 
@@ -129,7 +129,7 @@ Hallazgo:
 
 ### Ejercicio 10
 
-Archivo: `snippets/node_xss.js`
+Archivo: [`snippets/node_xss.js`](../snippets/node_xss.js)
 
 Hallazgo:
 
@@ -140,7 +140,7 @@ Hallazgo:
 
 ### Ejercicio 11
 
-Archivo: `snippets/node_jwt.js`
+Archivo: [`snippets/node_jwt.js`](../snippets/node_jwt.js)
 
 Hallazgo:
 
@@ -154,7 +154,7 @@ Hallazgo:
 
 ### Ejercicio 12
 
-Archivo: `snippets/c_overflow.c`
+Archivo: [`snippets/c_overflow.c`](../snippets/c_overflow.c)
 
 Hallazgo:
 
@@ -168,7 +168,7 @@ Hallazgo:
 
 ### Ejercicio 13
 
-Archivo: `snippets/python_idor.py`
+Archivo: [`snippets/python_idor.py`](../snippets/python_idor.py)
 
 Hallazgo:
 

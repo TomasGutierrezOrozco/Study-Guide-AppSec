@@ -1,4 +1,4 @@
-FROM debian:stretch-slim AS builder
+FROM debian:bookworm-slim AS builder
 RUN apt-get update && apt-get install -y gcc make curl
 RUN curl -O https://ftp.gnu.org/gnu/bash/bash-4.3.tar.gz && \
     tar zxvf bash-4.3.tar.gz && \

@@ -1,2 +1,3 @@
 # Local File Inclusion (LFI)
-return open(request.args['file']).read()
+def demo():
+    return open(request.args['file']).read()

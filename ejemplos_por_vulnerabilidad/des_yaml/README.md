@@ -1,63 +1,128 @@
+# YAML Deserialization
+
+## Descripción General
+Los analizadores de YAML permiten instanciar tipos complejos mediante etiquetas de tipo personalizadas (ej. `!!python/object/apply`). Si se utiliza un loader inseguro (como `yaml.load()` con `Loader=yaml.Loader` en PyYAML), el parser ejecutará constructores de clases arbitrarias, derivando en Remote Code Execution.
+
+## Patrones y Señales para Análisis SAST
+- Uso de `yaml.load()` sin especificar `Loader=yaml.SafeLoader` o sin usar `yaml.safe_load()`.
+- Librerías de otros lenguajes con resolución polimórfica activada (ej. SnakeYAML con `Constructor` por defecto).
+
+## Estrategia de Mitigación y Buenas Prácticas
+- Utilizar siempre cargadores seguros: `yaml.safe_load()` en Python.
+- Restringir constructores de clases en Java (ej. `new SafeConstructor()`).
+- Evitar instanciar tipos de código o funciones a partir de documentos YAML.
+
+## Análisis Técnico y Ejemplos por Lenguaje
+
+### 1. Python ([python.py](./python.py))
+```python
 # YAML Deserialization - Python
+yaml.load(request.data, Loader=yaml.Loader)
+```
+- **Sink peligroso y causa raíz:** `yaml.load(request.data, Loader=yaml.Loader)` con loader completo.
+- **Mecanismo de explotación y vector:** RCE mediante etiquetas como `!!python/object/apply:os.system ["id"]`.
+- **Remediación idiomática:** Cambiar inmediatamente a `yaml.safe_load(request.data)`.
 
-Este README aplica a todos los ejemplos de la carpeta. Aunque la sintaxis cambia entre lenguajes, la causa raiz de la vulnerabilidad es la misma.
+### 2. JavaScript / Node.js ([javascript.js](./javascript.js))
+```javascript
+// YAML Deserialization - Python
+function demo(req, res) {
+  yaml.load(req.body);
+  }
+```
+- **Sink peligroso y causa raíz:** Uso de `js-yaml` con esquemas inseguros (`DEFAULT_SAFE_SCHEMA` no aplicado en versiones viejas).
+- **Mecanismo de explotación y vector:** Ejecución de código o prototipos contaminados.
+- **Remediación idiomática:** Usar `yaml.load(data, { schema: yaml.FAILSAFE_SCHEMA })` o `yaml.safeLoad`.
 
-## Que hace vulnerable al patron
-Aunque el titulo menciona Python, el patron es parsear YAML no confiable con loaders que permiten construir objetos o tipos complejos.
-YAML soporta tags, referencias y estructuras avanzadas. Si el parser acepta esas capacidades sobre datos del usuario, un atacante puede forzar comportamientos inesperados o peligrosos durante la carga.
+### 3. Java ([java.java](./java.java))
+```java
+// YAML Deserialization - Python
+public class Example {
+  public void demo() throws Exception {
+    new org.yaml.snakeyaml.Yaml().load(body);
+      }
+}
+```
+- **Sink peligroso y causa raíz:** Instanciación de `Yaml()` en SnakeYAML sin `SafeConstructor`.
+- **Mecanismo de explotación y vector:** RCE a través de clases en classpath (ej. `javax.script.ScriptEngineManager`).
+- **Remediación idiomática:** Usar `new Yaml(new SafeConstructor(new LoaderOptions()))`.
 
-## Como identificar casos similares
-- Uso de `yaml.load` sin loader seguro, o equivalentes permisivos.
-- Procesamiento de YAML subido por usuarios o recibido desde red sin validacion.
-- Aceptacion de tags o tipos personalizados no controlados.
+### 4. Go ([go.go](./go.go))
+```go
+// YAML Deserialization - Python
+package main
+func demo() {
+  yaml.Unmarshal(body,&obj)
+  }
+```
+- **Sink peligroso y causa raíz:** Uso de librerías YAML (`gopkg.in/yaml.v3`).
+- **Mecanismo de explotación y vector:** Go no ejecuta código arbitrario al desempaquetar, pero estructuras sin validar pueden causar DoS.
+- **Remediación idiomática:** Desempaquetar en structs fijos y acotar el tamaño del payload.
 
-## Explicacion por lenguaje
-### Python (`python.py`)
-Fragmento representativo: `yaml.load(request.data, Loader=yaml.Loader)`
-En este ejemplo, lo vulnerable es parsear YAML con capacidades de construccion rica sobre una fuente no confiable. En Python, usar f-strings, concatenacion, carga directa de objetos o parseo sin restricciones no agrega ninguna proteccion automatica.
-Para encontrar casos parecidos en Python, busca loaders YAML inseguros, deserializacion de objetos y aceptacion de tags o tipos definidos por el usuario.
+### 5. PHP ([php.php](./php.php))
+```php
+<?php
+// YAML Deserialization - Python
+// equivalente en PHP: parser inseguro de YAML o unserialize sobre input externo.
+```
+- **Sink peligroso y causa raíz:** Uso de extensiones YAML o `yaml_parse()` con callbacks activos.
+- **Mecanismo de explotación y vector:** Invocación de funciones PHP mediante tags.
+- **Remediación idiomática:** Deshabilitar evaluación de callbacks en la función de parseo.
 
-### JavaScript (`javascript.js`)
-Fragmento representativo: `function demo(req, res) { yaml.load(req.body); }`
-En este ejemplo, lo vulnerable es parsear YAML con capacidades de construccion rica sobre una fuente no confiable. En JavaScript, los valores que vienen de `req`, `body`, `query` o merges de objetos llegan intactos al sink si no se validan antes.
-Para encontrar casos parecidos en JavaScript, busca loaders YAML inseguros, deserializacion de objetos y aceptacion de tags o tipos definidos por el usuario.
+### 6. C# (.NET) ([csharp.cs](./csharp.cs))
+```csharp
+// YAML Deserialization - Python
+public class Example {
+  public void Demo() {
+    var obj = new Deserializer().Deserialize<object>(body);
+      }
+}
+```
+- **Sink peligroso y causa raíz:** Uso de `YamlDotNet` permitiendo tags de tipos de .NET.
+- **Mecanismo de explotación y vector:** Instanciación de tipos peligrosos.
+- **Remediación idiomática:** No configurar resolvers de tipos que permitan clases arbitrarias.
 
-### Java (`java.java`)
-Fragmento representativo: `public class Example { public void demo() throws Exception { new org.yaml.snakeyaml.Yaml().load(body); } }`
-En este ejemplo, lo vulnerable es parsear YAML con capacidades de construccion rica sobre una fuente no confiable. En Java, concatenar `String`, deserializar o consumir datos de `request` deja toda la seguridad en la logica de la aplicacion.
-Para encontrar casos parecidos en Java, busca loaders YAML inseguros, deserializacion de objetos y aceptacion de tags o tipos definidos por el usuario.
+### 7. Ruby ([ruby.rb](./ruby.rb))
+```ruby
+# YAML Deserialization - Python
+def demo(params)
+  YAML.load(request.body.read)
+  end
+```
+- **Sink peligroso y causa raíz:** Uso de `YAML.load` en versiones antiguas de Psych o sin `safe_load`.
+- **Mecanismo de explotación y vector:** RCE mediante tags de clases internas de Ruby.
+- **Remediación idiomática:** Usar siempre `YAML.safe_load(yaml_str, permitted_classes: [])`.
 
-### Go (`go.go`)
-Fragmento representativo: `package main func demo() { yaml.Unmarshal(body,&obj) }`
-En este ejemplo, lo vulnerable es parsear YAML con capacidades de construccion rica sobre una fuente no confiable. En Go, tomar valores desde `r.URL.Query()`, `body` o estructuras similares y pasarlos a APIs sensibles no introduce sanitizacion por defecto.
-Para encontrar casos parecidos en Go, busca loaders YAML inseguros, deserializacion de objetos y aceptacion de tags o tipos definidos por el usuario.
+### 8. Rust ([rust.rs](./rust.rs))
+```rust
+// YAML Deserialization - Python
+fn demo() {
+  let value: serde_yaml::Value = serde_yaml::from_str(body)?;
+  }
+```
+- **Sink peligroso y causa raíz:** Uso de `serde_yaml`.
+- **Mecanismo de explotación y vector:** Rust valida fuertemente contra structs y no ejecuta código arbitrario.
+- **Remediación idiomática:** Mantener el tipado fuerte y limitar el tamaño del buffer.
 
-### PHP (`php.php`)
-Fragmento representativo: `YAML Deserialization - Python equivalente en PHP: parser inseguro de YAML o unserialize sobre input externo.`
-En este ejemplo, lo vulnerable es parsear YAML con capacidades de construccion rica sobre una fuente no confiable. En PHP, usar `$_GET`, `$_POST`, `php://input` o variables equivalentes directamente es un patron clasico de vulnerabilidad.
-Para encontrar casos parecidos en PHP, busca loaders YAML inseguros, deserializacion de objetos y aceptacion de tags o tipos definidos por el usuario.
+### 9. Perl ([perl.pl](./perl.pl))
+```perl
+# YAML Deserialization - Python
+sub demo {
+  YAML::Load($body);
+  }
+```
+- **Sink peligroso y causa raíz:** Uso de `YAML::Load` con soporte para deserializar objetos.
+- **Mecanismo de explotación y vector:** Ejecución de código mediante objetos bendecidos.
+- **Remediación idiomática:** Usar `YAML::Tiny` o `Safe` loaders.
 
-### Perl (`perl.pl`)
-Fragmento representativo: `sub demo { YAML::Load($body); }`
-En este ejemplo, lo vulnerable es parsear YAML con capacidades de construccion rica sobre una fuente no confiable. En Perl, las variables interpoladas o concatenadas conservan el control del atacante sobre la operacion final.
-Para encontrar casos parecidos en Perl, busca loaders YAML inseguros, deserializacion de objetos y aceptacion de tags o tipos definidos por el usuario.
-
-### Pascal (`pascal.pas`)
-Fragmento representativo: `program Example; begin YamlText := Request.Content; end.`
-En este ejemplo, lo vulnerable es parsear YAML con capacidades de construccion rica sobre una fuente no confiable. En Pascal, concatenar strings o reutilizar datos de `Request` transmite el valor no confiable hasta la operacion sensible.
-Para encontrar casos parecidos en Pascal, busca loaders YAML inseguros, deserializacion de objetos y aceptacion de tags o tipos definidos por el usuario.
-
-### Ruby (`ruby.rb`)
-Fragmento representativo: `def demo(params) YAML.load(request.body.read) end`
-En este ejemplo, lo vulnerable es parsear YAML con capacidades de construccion rica sobre una fuente no confiable. En Ruby, `params` e interpolacion hacen muy facil que la entrada del usuario llegue intacta a una API peligrosa.
-Para encontrar casos parecidos en Ruby, busca loaders YAML inseguros, deserializacion de objetos y aceptacion de tags o tipos definidos por el usuario.
-
-### Rust (`rust.rs`)
-Fragmento representativo: `fn demo() { let value: serde_yaml::Value = serde_yaml::from_str(body)?; }`
-En este ejemplo, lo vulnerable es parsear YAML con capacidades de construccion rica sobre una fuente no confiable. En Rust, la seguridad de memoria no evita fallas de logica: deserializar, concatenar o invocar APIs peligrosas con datos no confiables sigue siendo riesgoso.
-Para encontrar casos parecidos en Rust, busca loaders YAML inseguros, deserializacion de objetos y aceptacion de tags o tipos definidos por el usuario.
-
-### C# (`csharp.cs`)
-Fragmento representativo: `public class Example { public void Demo() { var obj = new Deserializer().Deserialize<object>(body); } }`
-En este ejemplo, lo vulnerable es parsear YAML con capacidades de construccion rica sobre una fuente no confiable. En C#, interpolacion, concatenacion, model binding o deserializacion no sustituyen validacion, autorizacion ni listas permitidas.
-Para encontrar casos parecidos en C#, busca loaders YAML inseguros, deserializacion de objetos y aceptacion de tags o tipos definidos por el usuario.
+### 10. Pascal / Free Pascal ([pascal.pas](./pascal.pas))
+```pascal
+{ YAML Deserialization - Python }
+program Example;
+begin
+  YamlText := Request.Content;
+  end.
+```
+- **Sink peligroso y causa raíz:** Procesamiento de documentos YAML complejos.
+- **Mecanismo de explotación y vector:** Lógica inesperada por datos maliciosos.
+- **Remediación idiomática:** Validar la estructura resultante.

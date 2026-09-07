@@ -21,8 +21,13 @@ http.createServer(async (req, res) => {
   }
   if (url.pathname === '/admin') {
     const token = (req.headers.authorization || '').replace('Bearer ', '');
-    const payload = token ? JSON.parse(Buffer.from(token.split('.')[1] || '', 'base64url').toString('utf8')) : {};
-    return res.end(payload.role === 'admin' ? 'admin-ok' : 'forbidden');
+    try {
+      const parts = token.split('.');
+      const payload = parts.length >= 2 ? JSON.parse(Buffer.from(parts[1] || '', 'base64url').toString('utf8')) : {};
+      return res.end(payload.role === 'admin' ? 'admin-ok' : 'forbidden');
+    } catch {
+      return res.end('forbidden');
+    }
   }
   if (url.pathname === '/account' && req.method === 'POST') {
     Object.assign(account, await parseJson(req));

@@ -1,63 +1,129 @@
 # Open Redirect
 
-Este README aplica a todos los ejemplos de la carpeta. Aunque la sintaxis cambia entre lenguajes, la causa raiz de la vulnerabilidad es la misma.
+## Descripción General
+Ocurre cuando una aplicación redirige a los usuarios hacia una URL provista en un parámetro de la solicitud (como `?next=https://evil.com`) sin verificar que el destino pertenezca al mismo dominio o a una lista de orígenes de confianza. Se explota en ataques de phishing, robo de tokens OAuth y bypass de filtros de seguridad.
 
-## Que hace vulnerable al patron
-La vulnerabilidad aparece cuando el destino de una redireccion depende directamente de un valor controlado por el usuario.
-El servidor se convierte en intermediario confiable hacia una URL arbitraria. Eso facilita phishing, evasiones de filtros y cadenas inseguras en flujos de login, OAuth o SSO.
+## Patrones y Señales para Análisis SAST
+- Llamadas a `redirect(request.args["next"])`, `res.redirect(req.query.url)`, `header("Location: " . $url)`.
+- Ausencia de verificación del dominio de destino.
 
-## Como identificar casos similares
-- Parametros como `next`, `returnUrl` o `redirect` usados directo en `Location`.
-- Validaciones debiles basadas en prefijos o subcadenas.
-- Aceptacion de URLs absolutas, esquemas no esperados o doble codificacion.
+## Estrategia de Mitigación y Buenas Prácticas
+- Permitir únicamente rutas relativas que inicien con `/` (evitando `//` que indica cambio de protocolo y host).
+- Si se requiere redirigir a dominios externos, validar contra una allowlist estricta de dominios autorizados.
+- Mostrar una página intermedia de confirmación antes de redirigir a un sitio externo.
 
-## Explicacion por lenguaje
-### Python (`python.py`)
-Fragmento representativo: `return redirect(request.args['next'])`
-En este ejemplo, lo vulnerable es delegar al usuario final la eleccion del destino de confianza al que el servidor redirecciona. En Python, usar f-strings, concatenacion, carga directa de objetos o parseo sin restricciones no agrega ninguna proteccion automatica.
-Para encontrar casos parecidos en Python, busca endpoints de redireccion donde el destino salga de la request sin normalizacion ni allowlist estricta.
+## Análisis Técnico y Ejemplos por Lenguaje
 
-### JavaScript (`javascript.js`)
-Fragmento representativo: `function demo(req, res) { res.redirect(req.query.next); }`
-En este ejemplo, lo vulnerable es delegar al usuario final la eleccion del destino de confianza al que el servidor redirecciona. En JavaScript, los valores que vienen de `req`, `body`, `query` o merges de objetos llegan intactos al sink si no se validan antes.
-Para encontrar casos parecidos en JavaScript, busca endpoints de redireccion donde el destino salga de la request sin normalizacion ni allowlist estricta.
+### 1. Python ([python.py](./python.py))
+```python
+# Open Redirect
+def demo():
+    return redirect(request.args['next'])
+```
+- **Sink peligroso y causa raíz:** `return redirect(request.args["next"])` sin validar.
+- **Mecanismo de explotación y vector:** Phishing creíble utilizando la reputación del dominio legítimo.
+- **Remediación idiomática:** Validar que sea relativo: `url_has_allowed_host_and_scheme(target, {request.host})`.
 
-### Java (`java.java`)
-Fragmento representativo: `public class Example { public void demo() throws Exception { response.sendRedirect(request.getParameter("next")); } }`
-En este ejemplo, lo vulnerable es delegar al usuario final la eleccion del destino de confianza al que el servidor redirecciona. En Java, concatenar `String`, deserializar o consumir datos de `request` deja toda la seguridad en la logica de la aplicacion.
-Para encontrar casos parecidos en Java, busca endpoints de redireccion donde el destino salga de la request sin normalizacion ni allowlist estricta.
+### 2. JavaScript / Node.js ([javascript.js](./javascript.js))
+```javascript
+// Open Redirect
+function demo(req, res) {
+  res.redirect(req.query.next);
+  }
+```
+- **Sink peligroso y causa raíz:** `res.redirect(req.query.next)` directo.
+- **Mecanismo de explotación y vector:** Redirección no autorizada a sitios fraudulentos.
+- **Remediación idiomática:** Comprobar que comience con `/` y no con `//`: `if (next.startsWith("/") && !next.startsWith("//"))`.
 
-### Go (`go.go`)
-Fragmento representativo: `package main func demo() { http.Redirect(w,r,r.URL.Query().Get("next"),302) }`
-En este ejemplo, lo vulnerable es delegar al usuario final la eleccion del destino de confianza al que el servidor redirecciona. En Go, tomar valores desde `r.URL.Query()`, `body` o estructuras similares y pasarlos a APIs sensibles no introduce sanitizacion por defecto.
-Para encontrar casos parecidos en Go, busca endpoints de redireccion donde el destino salga de la request sin normalizacion ni allowlist estricta.
+### 3. Java ([java.java](./java.java))
+```java
+// Open Redirect
+public class Example {
+  public void demo() throws Exception {
+    response.sendRedirect(request.getParameter("next"));
+      }
+}
+```
+- **Sink peligroso y causa raíz:** `response.sendRedirect(request.getParameter("next"))`.
+- **Mecanismo de explotación y vector:** Ataques de ingeniería social y robo de credenciales.
+- **Remediación idiomática:** Validar contra una allowlist de URLs o forzar rutas relativas del contexto.
 
-### PHP (`php.php`)
-Fragmento representativo: `header('Location: '.$_GET['next']);`
-En este ejemplo, lo vulnerable es delegar al usuario final la eleccion del destino de confianza al que el servidor redirecciona. En PHP, usar `$_GET`, `$_POST`, `php://input` o variables equivalentes directamente es un patron clasico de vulnerabilidad.
-Para encontrar casos parecidos en PHP, busca endpoints de redireccion donde el destino salga de la request sin normalizacion ni allowlist estricta.
+### 4. Go ([go.go](./go.go))
+```go
+// Open Redirect
+package main
+func demo() {
+  http.Redirect(w,r,r.URL.Query().Get("next"),302)
+  }
+```
+- **Sink peligroso y causa raíz:** `http.Redirect(w, r, r.URL.Query().Get("next"), 302)`.
+- **Mecanismo de explotación y vector:** Desvío de usuarios a páginas de phishing.
+- **Remediación idiomática:** Analizar con `url.Parse` y verificar que `u.Hostname() == ""` o coincida con el dominio del sitio.
 
-### Perl (`perl.pl`)
-Fragmento representativo: `sub demo { redirect param('next'); }`
-En este ejemplo, lo vulnerable es delegar al usuario final la eleccion del destino de confianza al que el servidor redirecciona. En Perl, las variables interpoladas o concatenadas conservan el control del atacante sobre la operacion final.
-Para encontrar casos parecidos en Perl, busca endpoints de redireccion donde el destino salga de la request sin normalizacion ni allowlist estricta.
+### 5. PHP ([php.php](./php.php))
+```php
+<?php
+// Open Redirect
+header('Location: '.$_GET['next']);
+```
+- **Sink peligroso y causa raíz:** `header("Location: " . $_GET["next"])` sin comprobación.
+- **Mecanismo de explotación y vector:** Redirección abierta hacia destinos de ataque.
+- **Remediación idiomática:** Validar con `filter_var` y comprobar que el host pertenezca a la organización.
 
-### Pascal (`pascal.pas`)
-Fragmento representativo: `program Example; begin Response.Code := 302; Response.Location := Request.QueryFields.Values['next']; end.`
-En este ejemplo, lo vulnerable es delegar al usuario final la eleccion del destino de confianza al que el servidor redirecciona. En Pascal, concatenar strings o reutilizar datos de `Request` transmite el valor no confiable hasta la operacion sensible.
-Para encontrar casos parecidos en Pascal, busca endpoints de redireccion donde el destino salga de la request sin normalizacion ni allowlist estricta.
+### 6. C# (.NET) ([csharp.cs](./csharp.cs))
+```csharp
+// Open Redirect
+public class Example {
+  public void Demo() {
+    return Redirect(Request.Query["next"]);
+      }
+}
+```
+- **Sink peligroso y causa raíz:** `return Redirect(returnUrl)` en ASP.NET Core.
+- **Mecanismo de explotación y vector:** Vulnerabilidad ante redirecciones externas.
+- **Remediación idiomática:** Usar `LocalRedirect(returnUrl)` que rechaza automáticamente URLs externas.
 
-### Ruby (`ruby.rb`)
-Fragmento representativo: `def demo(params) redirect_to params[:next], allow_other_host: true end`
-En este ejemplo, lo vulnerable es delegar al usuario final la eleccion del destino de confianza al que el servidor redirecciona. En Ruby, `params` e interpolacion hacen muy facil que la entrada del usuario llegue intacta a una API peligrosa.
-Para encontrar casos parecidos en Ruby, busca endpoints de redireccion donde el destino salga de la request sin normalizacion ni allowlist estricta.
+### 7. Ruby ([ruby.rb](./ruby.rb))
+```ruby
+# Open Redirect
+def demo(params)
+  redirect_to params[:next], allow_other_host: true
+  end
+```
+- **Sink peligroso y causa raíz:** `redirect_to params[:next]` en controladores Rails.
+- **Mecanismo de explotación y vector:** Ataques de Open Redirect.
+- **Remediación idiomática:** Usar `redirect_to params[:next], allow_other_host: false` en Rails.
 
-### Rust (`rust.rs`)
-Fragmento representativo: `fn demo() { redirect(next); }`
-En este ejemplo, lo vulnerable es delegar al usuario final la eleccion del destino de confianza al que el servidor redirecciona. En Rust, la seguridad de memoria no evita fallas de logica: deserializar, concatenar o invocar APIs peligrosas con datos no confiables sigue siendo riesgoso.
-Para encontrar casos parecidos en Rust, busca endpoints de redireccion donde el destino salga de la request sin normalizacion ni allowlist estricta.
+### 8. Rust ([rust.rs](./rust.rs))
+```rust
+// Open Redirect
+fn demo() {
+  redirect(next);
+  }
+```
+- **Sink peligroso y causa raíz:** Respuestas con código 302 y cabecera `Location` arbitraria.
+- **Mecanismo de explotación y vector:** Phishing.
+- **Remediación idiomática:** Validar la URL de destino contra una lista permitida.
 
-### C# (`csharp.cs`)
-Fragmento representativo: `public class Example { public void Demo() { return Redirect(Request.Query["next"]); } }`
-En este ejemplo, lo vulnerable es delegar al usuario final la eleccion del destino de confianza al que el servidor redirecciona. En C#, interpolacion, concatenacion, model binding o deserializacion no sustituyen validacion, autorizacion ni listas permitidas.
-Para encontrar casos parecidos en C#, busca endpoints de redireccion donde el destino salga de la request sin normalizacion ni allowlist estricta.
+### 9. Perl ([perl.pl](./perl.pl))
+```perl
+# Open Redirect
+sub demo {
+  redirect param('next');
+  }
+```
+- **Sink peligroso y causa raíz:** Emisión de cabecera `Location` con URL del usuario.
+- **Mecanismo de explotación y vector:** Phishing y bypass de políticas de seguridad.
+- **Remediación idiomática:** Restringir a rutas relativas seguras.
+
+### 10. Pascal / Free Pascal ([pascal.pas](./pascal.pas))
+```pascal
+{ Open Redirect }
+program Example;
+begin
+  Response.Code := 302; Response.Location := Request.QueryFields.Values['next'];
+  end.
+```
+- **Sink peligroso y causa raíz:** Redirección HTTP 302 con parámetro de cliente.
+- **Mecanismo de explotación y vector:** Redirección no controlada.
+- **Remediación idiomática:** Validar el host antes de enviar la cabecera.

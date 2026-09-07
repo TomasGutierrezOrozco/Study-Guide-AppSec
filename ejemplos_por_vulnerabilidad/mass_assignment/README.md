@@ -1,63 +1,128 @@
 # Mass Assignment
 
-Este README aplica a todos los ejemplos de la carpeta. Aunque la sintaxis cambia entre lenguajes, la causa raiz de la vulnerabilidad es la misma.
+## Descripción General
+Ocurre cuando una aplicación vincula automáticamente los parámetros de una solicitud HTTP a las propiedades de un objeto o modelo de datos sin filtrar qué campos pueden modificarse. Un atacante puede agregar campos privilegiados a la petición (como `is_admin=true`, `role=admin`, `balance=999999`) y modificar atributos críticos.
 
-## Que hace vulnerable al patron
-La vulnerabilidad aparece cuando el backend asigna automaticamente todos los campos enviados por el cliente a un objeto de dominio.
-El binding automatico copia tambien atributos internos como `role`, `is_admin`, `owner_id` o `balance`. El atacante no necesita un endpoint especial: solo enviar campos extra.
+## Patrones y Señales para Análisis SAST
+- Uso de `Object.assign(user, req.body)`, `user.__dict__.update()`, `foreach($_POST as $k=>$v)`.
+- Model binding automático en frameworks sin DTOs o sin listas de propiedades permitidas (`bind`, `fillable`).
 
-## Como identificar casos similares
-- Uso de `update(req.body)`, `Model.new(params)` o binders sobre modelos persistentes.
-- Ausencia de DTOs o allowlists de campos.
-- Campos sensibles presentes en el modelo pero no en el formulario oficial.
+## Estrategia de Mitigación y Buenas Prácticas
+- Utilizar Data Transfer Objects (DTOs) o ViewModels que contengan exclusivamente los campos permitidos.
+- Definir allowlists explícitas en el modelo (ej. `$fillable` en Laravel, `strong_parameters` en Rails).
+- Evitar asignar directamente diccionarios o cuerpos JSON al modelo de datos.
 
-## Explicacion por lenguaje
-### Python (`python.py`)
-Fragmento representativo: `user.__dict__.update(request.get_json())`
-En este ejemplo, lo vulnerable es dejar que el cliente decida que atributos internos del objeto se van a poblar. En Python, usar f-strings, concatenacion, carga directa de objetos o parseo sin restricciones no agrega ninguna proteccion automatica.
-Para encontrar casos parecidos en Python, busca mapeo automatico de request a modelos persistentes sin lista permitida de campos.
+## Análisis Técnico y Ejemplos por Lenguaje
 
-### JavaScript (`javascript.js`)
-Fragmento representativo: `function demo(req, res) { Object.assign(user,req.body); }`
-En este ejemplo, lo vulnerable es dejar que el cliente decida que atributos internos del objeto se van a poblar. En JavaScript, los valores que vienen de `req`, `body`, `query` o merges de objetos llegan intactos al sink si no se validan antes.
-Para encontrar casos parecidos en JavaScript, busca mapeo automatico de request a modelos persistentes sin lista permitida de campos.
+### 1. Python ([python.py](./python.py))
+```python
+# Mass Assignment
+user.__dict__.update(request.get_json())
+```
+- **Sink peligroso y causa raíz:** `user.__dict__.update(request.get_json())` sin filtrar claves.
+- **Mecanismo de explotación y vector:** Escalamiento de privilegios modificando atributos como `role` o `is_active`.
+- **Remediación idiomática:** Extraer campos explícitos: `user.name = data.get("name")` o usar esquemas con Pydantic/Marshmallow.
 
-### Java (`java.java`)
-Fragmento representativo: `public class Example { public void demo() throws Exception { BeanUtils.populate(user, request.getParameterMap()); } }`
-En este ejemplo, lo vulnerable es dejar que el cliente decida que atributos internos del objeto se van a poblar. En Java, concatenar `String`, deserializar o consumir datos de `request` deja toda la seguridad en la logica de la aplicacion.
-Para encontrar casos parecidos en Java, busca mapeo automatico de request a modelos persistentes sin lista permitida de campos.
+### 2. JavaScript / Node.js ([javascript.js](./javascript.js))
+```javascript
+// Mass Assignment
+function demo(req, res) {
+  Object.assign(user,req.body);
+  }
+```
+- **Sink peligroso y causa raíz:** `Object.assign(user, req.body)` asignando todos los campos entrantes.
+- **Mecanismo de explotación y vector:** Modificación no autorizada de roles (`role: "admin"`) o estado de cuenta.
+- **Remediación idiomática:** Filtrar explícitamente: `const { name, bio } = req.body; Object.assign(user, { name, bio });`.
 
-### Go (`go.go`)
-Fragmento representativo: `package main func demo() { json.NewDecoder(r.Body).Decode(&user) }`
-En este ejemplo, lo vulnerable es dejar que el cliente decida que atributos internos del objeto se van a poblar. En Go, tomar valores desde `r.URL.Query()`, `body` o estructuras similares y pasarlos a APIs sensibles no introduce sanitizacion por defecto.
-Para encontrar casos parecidos en Go, busca mapeo automatico de request a modelos persistentes sin lista permitida de campos.
+### 3. Java ([java.java](./java.java))
+```java
+// Mass Assignment
+public class Example {
+  public void demo() throws Exception {
+    BeanUtils.populate(user, request.getParameterMap());
+      }
+}
+```
+- **Sink peligroso y causa raíz:** Binding directo del cuerpo de la petición sobre la entidad JPA/Hibernate.
+- **Mecanismo de explotación y vector:** Modificación de identificadores de rol o saldo de cuenta.
+- **Remediación idiomática:** Crear DTOs dedicados con solo los campos mutables por el usuario.
 
-### PHP (`php.php`)
-Fragmento representativo: `foreach($_POST as $k=>$v){$user->$k=$v;}`
-En este ejemplo, lo vulnerable es dejar que el cliente decida que atributos internos del objeto se van a poblar. En PHP, usar `$_GET`, `$_POST`, `php://input` o variables equivalentes directamente es un patron clasico de vulnerabilidad.
-Para encontrar casos parecidos en PHP, busca mapeo automatico de request a modelos persistentes sin lista permitida de campos.
+### 4. Go ([go.go](./go.go))
+```go
+// Mass Assignment
+package main
+func demo() {
+  json.NewDecoder(r.Body).Decode(&user)
+  }
+```
+- **Sink peligroso y causa raíz:** `json.NewDecoder(r.Body).Decode(&user)` decodificando sobre la entidad completa.
+- **Mecanismo de explotación y vector:** Alteración de campos protegidos del struct de usuario.
+- **Remediación idiomática:** Crear un struct específico `UserUpdateInput` con los únicos campos permitidos.
 
-### Perl (`perl.pl`)
-Fragmento representativo: `sub demo { $user->{$_} = $params->{$_} for keys %$params; }`
-En este ejemplo, lo vulnerable es dejar que el cliente decida que atributos internos del objeto se van a poblar. En Perl, las variables interpoladas o concatenadas conservan el control del atacante sobre la operacion final.
-Para encontrar casos parecidos en Perl, busca mapeo automatico de request a modelos persistentes sin lista permitida de campos.
+### 5. PHP ([php.php](./php.php))
+```php
+<?php
+// Mass Assignment
+foreach($_POST as $k=>$v){$user->$k=$v;}
+```
+- **Sink peligroso y causa raíz:** `foreach($_POST as $k => $v) { $user->$k = $v; }` sin filtros.
+- **Mecanismo de explotación y vector:** Sobrescritura de atributos administrativos en la base de datos.
+- **Remediación idiomática:** Definir allowlist de atributos o usar DTOs tipados.
 
-### Pascal (`pascal.pas`)
-Fragmento representativo: `program Example; begin User.Role := Request.ContentFields.Values['role']; end.`
-En este ejemplo, lo vulnerable es dejar que el cliente decida que atributos internos del objeto se van a poblar. En Pascal, concatenar strings o reutilizar datos de `Request` transmite el valor no confiable hasta la operacion sensible.
-Para encontrar casos parecidos en Pascal, busca mapeo automatico de request a modelos persistentes sin lista permitida de campos.
+### 6. C# (.NET) ([csharp.cs](./csharp.cs))
+```csharp
+// Mass Assignment
+public class Example {
+  public void Demo() {
+    TryUpdateModelAsync(user).Wait();
+      }
+}
+```
+- **Sink peligroso y causa raíz:** Acciones de ASP.NET Core que reciben la entidad de base de datos directamente en el parámetro.
+- **Mecanismo de explotación y vector:** Over-posting attack: el atacante modifica propiedades como `IsAdmin`.
+- **Remediación idiomática:** Usar ViewModels/DTOs específicos y no vincular entidades de EF Core directamente.
 
-### Ruby (`ruby.rb`)
-Fragmento representativo: `def demo(params) user.update(params.require(:user).permit!) end`
-En este ejemplo, lo vulnerable es dejar que el cliente decida que atributos internos del objeto se van a poblar. En Ruby, `params` e interpolacion hacen muy facil que la entrada del usuario llegue intacta a una API peligrosa.
-Para encontrar casos parecidos en Ruby, busca mapeo automatico de request a modelos persistentes sin lista permitida de campos.
+### 7. Ruby ([ruby.rb](./ruby.rb))
+```ruby
+# Mass Assignment
+def demo(params)
+  user.update(params.require(:user).permit!)
+  end
+```
+- **Sink peligroso y causa raíz:** Uso de `User.update(params[:user])` sin Strong Parameters.
+- **Mecanismo de explotación y vector:** Modificación de atributos protegidos como `admin: true`.
+- **Remediación idiomática:** Usar `params.require(:user).permit(:name, :email)` en Rails.
 
-### Rust (`rust.rs`)
-Fragmento representativo: `fn demo() { user.role = form.role.clone(); }`
-En este ejemplo, lo vulnerable es dejar que el cliente decida que atributos internos del objeto se van a poblar. En Rust, la seguridad de memoria no evita fallas de logica: deserializar, concatenar o invocar APIs peligrosas con datos no confiables sigue siendo riesgoso.
-Para encontrar casos parecidos en Rust, busca mapeo automatico de request a modelos persistentes sin lista permitida de campos.
+### 8. Rust ([rust.rs](./rust.rs))
+```rust
+// Mass Assignment
+fn demo() {
+  user.role = form.role.clone();
+  }
+```
+- **Sink peligroso y causa raíz:** Deserialización de `req` directamente sobre el struct de base de datos.
+- **Mecanismo de explotación y vector:** Modificación de propiedades restringidas.
+- **Remediación idiomática:** Deserializar en un struct `UpdateUserRequest` con campos acotados.
 
-### C# (`csharp.cs`)
-Fragmento representativo: `public class Example { public void Demo() { TryUpdateModelAsync(user).Wait(); } }`
-En este ejemplo, lo vulnerable es dejar que el cliente decida que atributos internos del objeto se van a poblar. En C#, interpolacion, concatenacion, model binding o deserializacion no sustituyen validacion, autorizacion ni listas permitidas.
-Para encontrar casos parecidos en C#, busca mapeo automatico de request a modelos persistentes sin lista permitida de campos.
+### 9. Perl ([perl.pl](./perl.pl))
+```perl
+# Mass Assignment
+sub demo {
+  $user->{$_} = $params->{$_} for keys %$params;
+  }
+```
+- **Sink peligroso y causa raíz:** Mapeo ciego de parámetros a claves de hash del objeto.
+- **Mecanismo de explotación y vector:** Elevación de privilegios.
+- **Remediación idiomática:** Asignar únicamente los campos autorizados de forma explícita.
+
+### 10. Pascal / Free Pascal ([pascal.pas](./pascal.pas))
+```pascal
+{ Mass Assignment }
+program Example;
+begin
+  User.Role := Request.ContentFields.Values['role'];
+  end.
+```
+- **Sink peligroso y causa raíz:** Asignación directa de campos desde la petición al registro.
+- **Mecanismo de explotación y vector:** Sobrescritura de estado privilegiado.
+- **Remediación idiomática:** Copiar exclusivamente propiedades públicas autorizadas.

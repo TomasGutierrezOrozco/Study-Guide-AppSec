@@ -1,2 +1,3 @@
 # CSS Injection (CSSI)
-return f'<style>{request.args.get("css","body{}")}</style>'
+def demo():
+    return f'<style>{request.args.get("css", "body{}")}</style>'

@@ -1,63 +1,128 @@
 # Prototype Pollution
 
-Este README aplica a todos los ejemplos de la carpeta. Aunque la sintaxis cambia entre lenguajes, la causa raiz de la vulnerabilidad es la misma.
+## Descripción General
+Es una vulnerabilidad específica de JavaScript donde una función recursiva de copia o merge fusiona un objeto controlado por el usuario sin filtrar propiedades mágicas como `__proto__` o `constructor.prototype`. Esto permite modificar el prototipo de todos los objetos de la aplicación (`Object.prototype`), pudiendo causar Denial of Service, bypass de autenticación o RCE si las propiedades alteradas se usan en llamadas a `child_process`.
 
-## Que hace vulnerable al patron
-La vulnerabilidad aparece cuando un merge o asignacion de objetos permite escribir propiedades especiales del prototipo compartido.
-Si el atacante controla claves como `__proto__` o `constructor.prototype`, puede alterar el comportamiento de objetos presentes o futuros y romper supuestos globales del programa.
+## Patrones y Señales para Análisis SAST
+- Funciones recursivas de `merge`, `clone` o `extend` que no ignoran `__proto__` ni `prototype`.
+- Librerías vulnerables desactualizadas (ej. versiones antiguas de `lodash.merge`, `minimist`).
 
-## Como identificar casos similares
-- Merge profundo de objetos del usuario sin filtrar claves peligrosas.
-- Helpers que copian propiedades arbitrarias a objetos globales o de configuracion.
-- Parsers que convierten query params o JSON en estructuras anidadas sin saneamiento.
+## Estrategia de Mitigación y Buenas Prácticas
+- Ignorar explícitamente las claves `__proto__`, `constructor` y `prototype` en cualquier función de merge recursivo.
+- Crear objetos sin prototipo para almacenar datos de configuración: `Object.create(null)`.
+- Congelar el prototipo base al inicio de la aplicación: `Object.freeze(Object.prototype)`.
 
-## Explicacion por lenguaje
-### Python (`python.py`)
-Fragmento representativo: `config.update(request.get_json())`
-En este ejemplo, lo vulnerable es copiar sin restricciones claves especiales que modifican la cadena de prototipos o estructuras compartidas. En Python, usar f-strings, concatenacion, carga directa de objetos o parseo sin restricciones no agrega ninguna proteccion automatica.
-Para encontrar casos parecidos en Python, busca merges, `assign`, setters profundos o parsers de objetos que acepten claves anidadas del usuario.
+## Análisis Técnico y Ejemplos por Lenguaje
 
-### JavaScript (`javascript.js`)
-Fragmento representativo: `function demo(req, res) { Object.assign(config,req.body); }`
-En este ejemplo, lo vulnerable es copiar sin restricciones claves especiales que modifican la cadena de prototipos o estructuras compartidas. En JavaScript, los valores que vienen de `req`, `body`, `query` o merges de objetos llegan intactos al sink si no se validan antes.
-Para encontrar casos parecidos en JavaScript, busca merges, `assign`, setters profundos o parsers de objetos que acepten claves anidadas del usuario.
+### 1. Python ([python.py](./python.py))
+```python
+# Prototype Pollution
+config.update(request.get_json())
+```
+- **Sink peligroso y causa raíz:** Análogo en Python: manipulación de `__class__` o `__dict__`.
+- **Mecanismo de explotación y vector:** Modificación de atributos internos de clases.
+- **Remediación idiomática:** No permitir claves que comiencen con doble guion bajo en updates de diccionarios.
 
-### Java (`java.java`)
-Fragmento representativo: `public class Example { public void demo() throws Exception { } }`
-En este ejemplo, lo vulnerable es copiar sin restricciones claves especiales que modifican la cadena de prototipos o estructuras compartidas. En Java, concatenar `String`, deserializar o consumir datos de `request` deja toda la seguridad en la logica de la aplicacion.
-Para encontrar casos parecidos en Java, busca merges, `assign`, setters profundos o parsers de objetos que acepten claves anidadas del usuario.
+### 2. JavaScript / Node.js ([javascript.js](./javascript.js))
+```javascript
+// Prototype Pollution
+function demo(req, res) {
+  Object.assign(config,req.body);
+  }
+```
+- **Sink peligroso y causa raíz:** `deepMerge(profile, data)` procesando claves `__proto__`.
+- **Mecanismo de explotación y vector:** Contaminación de `Object.prototype`, bypass de comprobaciones lógicas y potencial RCE.
+- **Remediación idiomática:** Filtrar claves peligrosas: `if (key === "__proto__" || key === "constructor") continue;`.
 
-### Go (`go.go`)
-Fragmento representativo: `package main func demo() { }`
-En este ejemplo, lo vulnerable es copiar sin restricciones claves especiales que modifican la cadena de prototipos o estructuras compartidas. En Go, tomar valores desde `r.URL.Query()`, `body` o estructuras similares y pasarlos a APIs sensibles no introduce sanitizacion por defecto.
-Para encontrar casos parecidos en Go, busca merges, `assign`, setters profundos o parsers de objetos que acepten claves anidadas del usuario.
+### 3. Java ([java.java](./java.java))
+```java
+// Prototype Pollution
+public class Example {
+  public void demo() throws Exception {
+    // equivalente en Java: property binding inseguro.
+      }
+}
+```
+- **Sink peligroso y causa raíz:** En Java no aplica Prototype Pollution; el análogo es Reflection descontrolada.
+- **Mecanismo de explotación y vector:** Manipulación de campos privados.
+- **Remediación idiomática:** Usar tipado estático y prohibir reflection sobre clases de sistema.
 
-### PHP (`php.php`)
-Fragmento representativo: `$config=array_merge($config,json_decode(file_get_contents('php://input'),true));`
-En este ejemplo, lo vulnerable es copiar sin restricciones claves especiales que modifican la cadena de prototipos o estructuras compartidas. En PHP, usar `$_GET`, `$_POST`, `php://input` o variables equivalentes directamente es un patron clasico de vulnerabilidad.
-Para encontrar casos parecidos en PHP, busca merges, `assign`, setters profundos o parsers de objetos que acepten claves anidadas del usuario.
+### 4. Go ([go.go](./go.go))
+```go
+// Prototype Pollution
+package main
+func demo() {
+  // En Go el analogo mas cercano es mapear JSON ciegamente a structs.
+  }
+```
+- **Sink peligroso y causa raíz:** No aplica en Go por su sistema de tipos y ausencia de prototipos.
+- **Mecanismo de explotación y vector:** Inyección de campos no prevista.
+- **Remediación idiomática:** Desempaquetar en structs definidos.
 
-### Perl (`perl.pl`)
-Fragmento representativo: `sub demo { }`
-En este ejemplo, lo vulnerable es copiar sin restricciones claves especiales que modifican la cadena de prototipos o estructuras compartidas. En Perl, las variables interpoladas o concatenadas conservan el control del atacante sobre la operacion final.
-Para encontrar casos parecidos en Perl, busca merges, `assign`, setters profundos o parsers de objetos que acepten claves anidadas del usuario.
+### 5. PHP ([php.php](./php.php))
+```php
+<?php
+// Prototype Pollution
+$config=array_merge($config,json_decode(file_get_contents('php://input'),true));
+```
+- **Sink peligroso y causa raíz:** En PHP no hay herencia prototípica; el análogo es sobreescritura de propiedades dinámicas.
+- **Mecanismo de explotación y vector:** Inconsistencia de estado.
+- **Remediación idiomática:** Definir propiedades de clase explícitas y desactivar propiedades dinámicas.
 
-### Pascal (`pascal.pas`)
-Fragmento representativo: `program Example; begin end.`
-En este ejemplo, lo vulnerable es copiar sin restricciones claves especiales que modifican la cadena de prototipos o estructuras compartidas. En Pascal, concatenar strings o reutilizar datos de `Request` transmite el valor no confiable hasta la operacion sensible.
-Para encontrar casos parecidos en Pascal, busca merges, `assign`, setters profundos o parsers de objetos que acepten claves anidadas del usuario.
+### 6. C# (.NET) ([csharp.cs](./csharp.cs))
+```csharp
+// Prototype Pollution
+public class Example {
+  public void Demo() {
+    // Prototype pollution no aplica directo en C#.
+      }
+}
+```
+- **Sink peligroso y causa raíz:** No aplica en C#; el análogo es manipulación de ExpandoObject o Dynamic.
+- **Mecanismo de explotación y vector:** Modificación de propiedades dinámicas.
+- **Remediación idiomática:** Usar clases fuertemente tipadas.
 
-### Ruby (`ruby.rb`)
-Fragmento representativo: `def demo(params) end`
-En este ejemplo, lo vulnerable es copiar sin restricciones claves especiales que modifican la cadena de prototipos o estructuras compartidas. En Ruby, `params` e interpolacion hacen muy facil que la entrada del usuario llegue intacta a una API peligrosa.
-Para encontrar casos parecidos en Ruby, busca merges, `assign`, setters profundos o parsers de objetos que acepten claves anidadas del usuario.
+### 7. Ruby ([ruby.rb](./ruby.rb))
+```ruby
+# Prototype Pollution
+def demo(params)
+  # Prototype pollution no aplica directo; equivalente: merge inseguro de hashes.
+  end
+```
+- **Sink peligroso y causa raíz:** Modificación de clases base mediante `send` o `instance_variable_set`.
+- **Mecanismo de explotación y vector:** Alteración global de comportamiento.
+- **Remediación idiomática:** No permitir que entradas de usuario determinen nombres de variables de instancia.
 
-### Rust (`rust.rs`)
-Fragmento representativo: `fn demo() { }`
-En este ejemplo, lo vulnerable es copiar sin restricciones claves especiales que modifican la cadena de prototipos o estructuras compartidas. En Rust, la seguridad de memoria no evita fallas de logica: deserializar, concatenar o invocar APIs peligrosas con datos no confiables sigue siendo riesgoso.
-Para encontrar casos parecidos en Rust, busca merges, `assign`, setters profundos o parsers de objetos que acepten claves anidadas del usuario.
+### 8. Rust ([rust.rs](./rust.rs))
+```rust
+// Prototype Pollution
+fn demo() {
+  // Prototype pollution no aplica directamente en Rust.
+  }
+```
+- **Sink peligroso y causa raíz:** No aplica en Rust gracias a su sistema de tipos y ownership.
+- **Mecanismo de explotación y vector:** N/A.
+- **Remediación idiomática:** Usar structs tipados.
 
-### C# (`csharp.cs`)
-Fragmento representativo: `public class Example { public void Demo() { } }`
-En este ejemplo, lo vulnerable es copiar sin restricciones claves especiales que modifican la cadena de prototipos o estructuras compartidas. En C#, interpolacion, concatenacion, model binding o deserializacion no sustituyen validacion, autorizacion ni listas permitidas.
-Para encontrar casos parecidos en C#, busca merges, `assign`, setters profundos o parsers de objetos que acepten claves anidadas del usuario.
+### 9. Perl ([perl.pl](./perl.pl))
+```perl
+# Prototype Pollution
+sub demo {
+  # No aplica directo; equivalente: merge inseguro de hashes.
+  }
+```
+- **Sink peligroso y causa raíz:** Manipulación de tablas de símbolos (`stash`).
+- **Mecanismo de explotación y vector:** Sobrescritura de métodos globales.
+- **Remediación idiomática:** No usar nombres de parámetros para acceder a tablas de símbolos.
+
+### 10. Pascal / Free Pascal ([pascal.pas](./pascal.pas))
+```pascal
+{ Prototype Pollution }
+program Example;
+begin
+  // Prototype pollution no aplica directamente; equivalente: binding inseguro de propiedades.
+  end.
+```
+- **Sink peligroso y causa raíz:** No aplica en Pascal.
+- **Mecanismo de explotación y vector:** N/A.
+- **Remediación idiomática:** Mantener tipado estricto.
